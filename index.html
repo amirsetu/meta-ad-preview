@@ -763,25 +763,28 @@
             {/* Mobile: Edit / Library / Preview tabs */}
             {isMobile && (
               <div style={{ borderTop: "1px solid rgba(0,0,0,0.06)" }}>
-                <div style={{ display: "flex", alignItems: "center", padding: "0 16px", gap: 8, height: 44 }}>
-                  <div style={{ display: "flex", gap: 4, background: "rgba(0,0,0,0.05)", borderRadius: 8, padding: 3, flexShrink: 0 }}>
+                {/* Main tabs row */}
+                <div style={{ display: "flex", padding: "8px 16px 0" }}>
+                  <div style={{ display: "flex", gap: 4, background: "rgba(0,0,0,0.05)", borderRadius: 8, padding: 3, width: "100%" }}>
                     {["edit", "library", "preview"].map(tab => (
-                      <button key={tab} onClick={() => setMobileTab(tab)} style={{ background: mobileTab === tab ? "#fff" : "transparent", color: "#1d1d1f", border: "none", borderRadius: 6, padding: "5px 12px", fontSize: 12, fontWeight: 600, cursor: "pointer", boxShadow: mobileTab === tab ? "0 1px 3px rgba(0,0,0,0.08)" : "none", textTransform: "capitalize" }}>
+                      <button key={tab} onClick={() => setMobileTab(tab)} style={{ flex: 1, background: mobileTab === tab ? "#fff" : "transparent", color: "#1d1d1f", border: "none", borderRadius: 6, padding: "7px 4px", fontSize: 13, fontWeight: 600, cursor: "pointer", boxShadow: mobileTab === tab ? "0 1px 3px rgba(0,0,0,0.08)" : "none" }}>
                         {tab === "library" ? `Library${saved.length > 0 ? ` (${saved.length})` : ""}` : tab.charAt(0).toUpperCase() + tab.slice(1)}
                       </button>
                     ))}
                   </div>
-                  {mobileTab === "preview" && (
-                    <div style={{ display: "flex", gap: 4, overflowX: "auto" }}>
-                      {["ig-feed", "ig-stories", "fb-mobile"].map(id => {
-                        const label = { "ig-feed": "IG Feed", "ig-stories": "Stories", "fb-mobile": "FB" }[id];
-                        return (
-                          <button key={id} onClick={() => setPlacement(id)} style={{ background: placement === id ? "#1d1d1f" : "transparent", color: placement === id ? "#fff" : "#1d1d1f", border: "1px solid " + (placement === id ? "#1d1d1f" : "#d0d0d0"), borderRadius: 6, padding: "5px 12px", fontSize: 12, fontWeight: 600, cursor: "pointer", whiteSpace: "nowrap" }}>{label}</button>
-                        );
-                      })}
-                    </div>
-                  )}
                 </div>
+                {/* Placement selector — only shown in Preview tab, on its own row */}
+                {mobileTab === "preview" && (
+                  <div style={{ display: "flex", gap: 8, padding: "8px 16px", overflowX: "auto" }}>
+                    {["ig-feed", "ig-stories", "fb-mobile"].map(id => {
+                      const label = { "ig-feed": "IG Feed", "ig-stories": "IG Stories", "fb-mobile": "FB Mobile" }[id];
+                      return (
+                        <button key={id} onClick={() => setPlacement(id)} style={{ background: placement === id ? "#1d1d1f" : "#fff", color: placement === id ? "#fff" : "#1d1d1f", border: "1px solid " + (placement === id ? "#1d1d1f" : "#d0d0d0"), borderRadius: 20, padding: "5px 14px", fontSize: 12, fontWeight: 600, cursor: "pointer", whiteSpace: "nowrap", flexShrink: 0 }}>{label}</button>
+                      );
+                    })}
+                  </div>
+                )}
+                {mobileTab !== "preview" && <div style={{ height: 8 }} />}
               </div>
             )}
           </div>
