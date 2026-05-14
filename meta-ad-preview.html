@@ -28,17 +28,38 @@
   <script type="text/babel">
     const { useState, useRef, useCallback, useEffect } = React;
 
+    // IndexedDB storage — no size limits unlike localStorage (which caps at ~5MB)
+    const _db = new Promise((resolve, reject) => {
+      const req = indexedDB.open("rg-ad-preview", 1);
+      req.onupgradeneeded = e => e.target.result.createObjectStore("kv");
+      req.onsuccess    = e => resolve(e.target.result);
+      req.onerror      = e => reject(e.target.error);
+    });
     const storage = {
       get: async (key) => {
-        const value = localStorage.getItem(key);
-        return value ? { value } : null;
+        const db = await _db;
+        return new Promise((res, rej) => {
+          const req = db.transaction("kv", "readonly").objectStore("kv").get(key);
+          req.onsuccess = () => res(req.result != null ? { value: req.result } : null);
+          req.onerror   = () => rej(req.error);
+        });
       },
       set: async (key, value) => {
-        localStorage.setItem(key, value);
+        const db = await _db;
+        return new Promise((res, rej) => {
+          const req = db.transaction("kv", "readwrite").objectStore("kv").put(value, key);
+          req.onsuccess = () => res();
+          req.onerror   = () => rej(req.error);
+        });
       },
       delete: async (key) => {
-        localStorage.removeItem(key);
-      }
+        const db = await _db;
+        return new Promise((res, rej) => {
+          const req = db.transaction("kv", "readwrite").objectStore("kv").delete(key);
+          req.onsuccess = () => res();
+          req.onerror   = () => rej(req.error);
+        });
+      },
     };
 
     const LIMITS = {
