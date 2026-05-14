@@ -1,0 +1,918 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Meta Ad Preview — RapidGrade</title>
+  <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    html, body, #root { height: 100%; width: 100%; }
+    body {
+      background: linear-gradient(135deg, #f5f5f7 0%, #ffffff 100%);
+      color: #1d1d1f;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Helvetica Neue", sans-serif;
+      -webkit-font-smoothing: antialiased;
+    }
+    ::-webkit-scrollbar { width: 8px; height: 8px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: #d0d0d0; border-radius: 4px; }
+    ::-webkit-scrollbar-thumb:hover { background: #999; }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+
+  <script type="text/babel">
+    const { useState, useRef, useCallback, useEffect } = React;
+
+    const storage = {
+      get: async (key) => {
+        const value = localStorage.getItem(key);
+        return value ? { value } : null;
+      },
+      set: async (key, value) => {
+        localStorage.setItem(key, value);
+      },
+      delete: async (key) => {
+        localStorage.removeItem(key);
+      }
+    };
+
+    const LIMITS = {
+      primaryText: { rec: 125, max: 500 },
+      headline:    { rec: 27,  max: 40  },
+      description: { rec: 30,  max: 125 },
+    };
+    const CTA_OPTIONS = [
+      "Apply Now","Book Now","Buy Tickets","Call Now","Contact Us",
+      "Download","Get Offer","Get Quote","Get Showtimes","Learn More",
+      "Listen Now","Order Now","Play Game","Request Time","See Menu",
+      "Send Message","Shop Now","Sign Up","Subscribe","Watch More","No Button",
+    ];
+    const PLACEMENTS = [
+      { id: "ig-feed",    label: "IG Feed"    },
+      { id: "ig-stories", label: "IG Stories" },
+      { id: "fb-mobile",  label: "FB Mobile"  },
+      { id: "fb-desktop", label: "FB Desktop" },
+    ];
+
+    // Instagram feed supports: landscape 1.91:1, square 1:1, portrait 4:5
+    // 9:16 is Stories only — not shown in the feed
+    const ASPECT_RATIOS = [
+      { id: "landscape", label: "1.91:1", value: "1.91/1" },
+      { id: "square",    label: "1:1",    value: "1/1"    },
+      { id: "portrait",  label: "4:5",    value: "4/5"    },
+    ];
+
+    const EMPTY = {
+      id: null, name: "", image: null,
+      primaryText: "", headline: "", description: "",
+      cta: "Learn More", destinationUrl: "", aspectRatio: "4/5",
+      adType: "single",
+      carouselCards: [
+        { id: "card_0", image: null, headline: "" },
+        { id: "card_1", image: null, headline: "" },
+      ],
+    };
+
+    const getDomain = (url) => {
+      if (!url) return "getrapidgrade.com";
+      try { return new URL(url.startsWith("http") ? url : "https://" + url).hostname.replace("www.", ""); }
+      catch { return url || "getrapidgrade.com"; }
+    };
+    const go = (url) => {
+      if (!url) return;
+      window.open(url.startsWith("http") ? url : "https://" + url, "_blank");
+    };
+    const cut = (text, n) => {
+      if (!text) return "";
+      return text.length > n ? text.slice(0, n) : text;
+    };
+    const cc = (count, rec, max) =>
+      count > max ? "#d70015" : count > rec ? "#f2a200" : "#34c759";
+
+    const resizeImg = (file) =>
+      new Promise((resolve) => {
+        const reader = new FileReader();
+        reader.onload = (e) => {
+          const img = new Image();
+          img.onload = () => {
+            const MAX = 1440;
+            let [w, h] = [img.width, img.height];
+            if (w > MAX) { h = Math.round((h * MAX) / w); w = MAX; }
+            const canvas = document.createElement("canvas");
+            canvas.width = w; canvas.height = h;
+            canvas.getContext("2d").drawImage(img, 0, 0, w, h);
+            resolve(canvas.toDataURL("image/jpeg", 0.92));
+          };
+          img.src = e.target.result;
+        };
+        reader.readAsDataURL(file);
+      });
+
+    // ─── INSTAGRAM FEED ───────────────────────────────────────────────────────
+    // Aspect ratio notes (Instagram feed ad specs):
+    //   Landscape 1.91:1 → container is 375 × 196px on a 375px screen
+    //   Square    1:1    → container is 375 × 375px
+    //   Portrait  4:5    → container is 375 × 469px (max Instagram allows)
+    // CSS aspect-ratio on a 100%-width container produces exactly these heights.
+    const IGFeed = ({ ad }) => {
+      const [activeSlide, setActiveSlide] = useState(0);
+
+      const isCarousel = ad.adType === "carousel" && (ad.carouselCards || []).length > 0;
+      const cards = isCarousel
+        ? (ad.carouselCards || [])
+        : [{ image: ad.image, headline: ad.headline }];
+      const slideIdx  = Math.min(activeSlide, Math.max(0, cards.length - 1));
+      const card      = cards[slideIdx] || {};
+      const totalSlides = cards.length;
+      const ctaHeadline = cut(card.headline || ad.headline, 40) || ad.cta;
+
+      return (
+        <div style={{ fontFamily: '-apple-system,"Helvetica Neue",sans-serif', background: "#fff", width: "100%", display: "flex", flexDirection: "column" }}>
+
+          {/* IG App Nav Bar */}
+          <div style={{ padding: "8px 14px", display: "flex", alignItems: "center", justifyContent: "space-between", borderBottom: "0.5px solid #dbdbdb", flexShrink: 0 }}>
+            <span style={{ fontSize: 22, fontFamily: "Georgia, 'Times New Roman', serif", fontStyle: "italic", color: "#262626", letterSpacing: -0.5 }}>Instagram</span>
+            <div style={{ display: "flex", gap: 16, alignItems: "center" }}>
+              <svg viewBox="0 0 24 24" fill="none" stroke="#262626" strokeWidth="2" style={{ width: 24, height: 24 }}><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/></svg>
+              <svg viewBox="0 0 24 24" fill="none" stroke="#262626" strokeWidth="2" style={{ width: 24, height: 24 }}><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+            </div>
+          </div>
+
+          {/* Scrollable feed */}
+          <div style={{ flex: 1, overflowY: "auto", overflowX: "hidden" }}>
+
+            {/* Previous post stub */}
+            <div style={{ padding: "6px 14px 8px", borderBottom: "0.5px solid #dbdbdb", fontSize: 12, color: "#8e8e8e" }}>
+              <span style={{ fontWeight: 700, color: "#262626" }}>vantixmag </span>The El Clásico match taking place... <span style={{ color: "#8e8e8e" }}>more</span>
+              <div style={{ marginTop: 3, fontSize: 11 }}>3 days ago</div>
+            </div>
+
+            {/* ── AD POST ── */}
+            <div>
+              {/* Post Header */}
+              <div style={{ padding: "9px 14px", display: "flex", alignItems: "center", gap: 10 }}>
+                <div style={{ width: 38, height: 38, borderRadius: "50%", background: "linear-gradient(135deg, #f58529, #dd2a7b, #8134af)", padding: 2.5, flexShrink: 0 }}>
+                  <div style={{ width: "100%", height: "100%", borderRadius: "50%", background: "#fff", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 12, fontWeight: 700, color: "#333" }}>RG</div>
+                </div>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: 13.5, fontWeight: 700, color: "#000", lineHeight: 1.25 }}>rapidgrade</div>
+                  <div style={{ fontSize: 12, color: "#8e8e8e", lineHeight: 1.25 }}>Ad</div>
+                </div>
+                <button style={{ background: "#efefef", border: "none", borderRadius: 10, padding: "7px 16px", fontSize: 14, fontWeight: 600, color: "#000", cursor: "pointer", flexShrink: 0 }}>Follow</button>
+                <span style={{ color: "#262626", fontSize: 20, cursor: "pointer", flexShrink: 0, marginLeft: 4, lineHeight: 1 }}>⋯</span>
+              </div>
+
+              {/* ── Image / Carousel ── */}
+              <div style={{ width: "100%", position: "relative" }}>
+                {/* Image container — aspect-ratio drives exact Instagram-spec height */}
+                <div style={{ width: "100%", aspectRatio: ad.aspectRatio || "1/1", background: "#efefef", overflow: "hidden", position: "relative" }}>
+                  {card.image
+                    ? <img src={card.image} style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} alt="Ad" />
+                    : <div style={{ width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center", color: "#bcc0c4", fontSize: 13 }}>No image</div>
+                  }
+
+                  {/* Left arrow */}
+                  {isCarousel && slideIdx > 0 && (
+                    <button
+                      onClick={() => setActiveSlide(p => Math.max(0, p - 1))}
+                      style={{ position: "absolute", left: 10, top: "50%", transform: "translateY(-50%)", width: 30, height: 30, borderRadius: "50%", background: "rgba(255,255,255,0.92)", border: "none", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", boxShadow: "0 1px 6px rgba(0,0,0,0.22)", fontSize: 18, color: "#262626", zIndex: 2, lineHeight: 1 }}
+                    >‹</button>
+                  )}
+
+                  {/* Right arrow */}
+                  {isCarousel && slideIdx < totalSlides - 1 && (
+                    <button
+                      onClick={() => setActiveSlide(p => Math.min(totalSlides - 1, p + 1))}
+                      style={{ position: "absolute", right: 10, top: "50%", transform: "translateY(-50%)", width: 30, height: 30, borderRadius: "50%", background: "rgba(255,255,255,0.92)", border: "none", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", boxShadow: "0 1px 6px rgba(0,0,0,0.22)", fontSize: 18, color: "#262626", zIndex: 2, lineHeight: 1 }}
+                    >›</button>
+                  )}
+                </div>
+
+                {/* Carousel dots — between image and CTA strip, same as real IG */}
+                {isCarousel && totalSlides > 1 && (
+                  <div style={{ display: "flex", justifyContent: "center", alignItems: "center", gap: 4, padding: "7px 0 5px" }}>
+                    {cards.map((_, i) => (
+                      <div
+                        key={i}
+                        onClick={() => setActiveSlide(i)}
+                        style={{
+                          width:      i === slideIdx ? 6 : 5,
+                          height:     i === slideIdx ? 6 : 5,
+                          borderRadius: "50%",
+                          background: i === slideIdx ? "#3897f0" : "#c7c7c7",
+                          cursor: "pointer",
+                          transition: "all .15s",
+                          flexShrink: 0,
+                        }}
+                      />
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {/* CTA Strip — real IG shows: domain (gray) + headline (bold) left, CTA button right */}
+              {ad.cta !== "No Button" && (
+                <div onClick={() => go(ad.destinationUrl)} style={{ background: "#f5f5f5", borderTop: "0.5px solid #dbdbdb", borderBottom: "0.5px solid #dbdbdb", padding: "10px 14px", display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, cursor: ad.destinationUrl ? "pointer" : "default" }}>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontSize: 11, color: "#8e8e8e", marginBottom: 2, textTransform: "uppercase", letterSpacing: 0.2 }}>{getDomain(ad.destinationUrl)}</div>
+                    <div style={{ fontSize: 14, fontWeight: 700, color: "#000", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{ctaHeadline}</div>
+                  </div>
+                  <button style={{ background: "#dbdbdb", border: "none", borderRadius: 6, padding: "8px 14px", fontSize: 13, fontWeight: 600, color: "#000", cursor: "pointer", flexShrink: 0, whiteSpace: "nowrap" }}>{ad.cta}</button>
+                </div>
+              )}
+
+              {/* Action Bar */}
+              <div style={{ padding: "10px 14px 6px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                <div style={{ display: "flex", gap: 14, alignItems: "center" }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
+                    <svg viewBox="0 0 24 24" fill="none" stroke="#262626" strokeWidth="1.7" style={{ width: 26, height: 26, cursor: "pointer" }}><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/></svg>
+                    <span style={{ fontSize: 14, color: "#262626", fontWeight: 500 }}>48</span>
+                  </div>
+                  <svg viewBox="0 0 24 24" fill="none" stroke="#262626" strokeWidth="1.7" style={{ width: 26, height: 26, cursor: "pointer" }}><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+                  <svg viewBox="0 0 24 24" fill="none" stroke="#262626" strokeWidth="1.7" style={{ width: 26, height: 26, cursor: "pointer" }}><polyline points="17 1 21 5 17 9"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/><polyline points="7 23 3 19 7 15"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/></svg>
+                  <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
+                    <svg viewBox="0 0 24 24" fill="none" stroke="#262626" strokeWidth="1.7" style={{ width: 26, height: 26, cursor: "pointer" }}><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+                    <span style={{ fontSize: 14, color: "#262626", fontWeight: 500 }}>1</span>
+                  </div>
+                </div>
+                <svg viewBox="0 0 24 24" fill="none" stroke="#262626" strokeWidth="1.7" style={{ width: 26, height: 26, cursor: "pointer" }}><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/></svg>
+              </div>
+
+              {/* Caption */}
+              {ad.primaryText && (
+                <div style={{ padding: "0 14px 6px", fontSize: 13.5, color: "#000", lineHeight: 1.5 }}>
+                  <span style={{ display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden" }}>
+                    <span style={{ fontWeight: 700 }}>rapidgrade </span>
+                    {ad.primaryText}
+                  </span>
+                  <span style={{ color: "#8e8e8e", cursor: "pointer", fontSize: 13.5 }}>more</span>
+                </div>
+              )}
+
+              <div style={{ padding: "0 14px 4px", fontSize: 13, color: "#8e8e8e", cursor: "pointer" }}>View all 12 comments</div>
+              <div style={{ padding: "2px 14px 12px", fontSize: 11, color: "#8e8e8e", letterSpacing: 0.2, textTransform: "uppercase" }}>3 days ago</div>
+            </div>
+
+            {/* Next post stub */}
+            <div style={{ padding: "9px 14px", display: "flex", alignItems: "center", gap: 10, borderTop: "0.5px solid #dbdbdb" }}>
+              <div style={{ width: 38, height: 38, borderRadius: "50%", background: "#e0c9b0", flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 11, fontWeight: 700, color: "#7a5c3a" }}>KF</div>
+              <div>
+                <div style={{ fontSize: 13.5, fontWeight: 700, color: "#000" }}>diekaffeefreunde.de</div>
+                <div style={{ fontSize: 12, color: "#8e8e8e" }}>Ad</div>
+              </div>
+              <button style={{ background: "#efefef", border: "none", borderRadius: 10, padding: "7px 16px", fontSize: 14, fontWeight: 600, color: "#000", cursor: "pointer", marginLeft: "auto" }}>Follow</button>
+              <span style={{ color: "#262626", fontSize: 20, cursor: "pointer", lineHeight: 1 }}>⋯</span>
+            </div>
+          </div>
+
+          {/* Instagram Bottom Nav */}
+          <div style={{ borderTop: "0.5px solid #dbdbdb", padding: "10px 0 14px", display: "flex", justifyContent: "space-around", alignItems: "center", background: "#fff", flexShrink: 0 }}>
+            <svg viewBox="0 0 24 24" fill="#262626" style={{ width: 26, height: 26, cursor: "pointer" }}><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22" fill="#fff"/></svg>
+            <svg viewBox="0 0 24 24" fill="none" stroke="#262626" strokeWidth="1.8" style={{ width: 26, height: 26, cursor: "pointer" }}><rect x="2" y="2" width="20" height="20" rx="2.18" ry="2.18"/><line x1="7" y1="2" x2="7" y2="22"/><line x1="17" y1="2" x2="17" y2="22"/><line x1="2" y1="12" x2="22" y2="12"/><line x1="2" y1="7" x2="7" y2="7"/><line x1="2" y1="17" x2="7" y2="17"/><line x1="17" y1="17" x2="22" y2="17"/><line x1="17" y1="7" x2="22" y2="7"/></svg>
+            <svg viewBox="0 0 24 24" fill="none" stroke="#262626" strokeWidth="2" style={{ width: 26, height: 26, cursor: "pointer" }}><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="12" y1="8" x2="12" y2="16"/><line x1="8" y1="12" x2="16" y2="12"/></svg>
+            <svg viewBox="0 0 24 24" fill="none" stroke="#262626" strokeWidth="1.8" style={{ width: 26, height: 26, cursor: "pointer" }}><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+            <div style={{ width: 26, height: 26, borderRadius: "50%", background: "linear-gradient(135deg, #8e44ad, #3498db)", cursor: "pointer", border: "2px solid #262626" }} />
+          </div>
+        </div>
+      );
+    };
+
+    // ─── INSTAGRAM STORIES ────────────────────────────────────────────────
+    const IGStories = ({ ad }) => (
+      <div style={{ width: "100%", background: "#000", position: "relative", fontFamily: '-apple-system,sans-serif', overflow: "hidden", aspectRatio: "9/16", boxShadow: "0 2px 8px rgba(0,0,0,0.2)" }}>
+        <div style={{ position: "absolute", inset: 0, background: "#f0f2f5" }}>
+          {ad.image
+            ? <img src={ad.image} style={{ width: "100%", height: "100%", objectFit: "cover" }} alt="Ad" />
+            : <div style={{ width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center", color: "#aaa", fontSize: 14 }}>No image</div>}
+        </div>
+        <div style={{ position: "absolute", top: 0, left: 0, right: 0, height: "25%", background: "linear-gradient(to bottom, rgba(0,0,0,0.4), transparent)", zIndex: 1 }} />
+        <div style={{ position: "absolute", bottom: 0, left: 0, right: 0, height: "35%", background: "linear-gradient(to top, rgba(0,0,0,0.6), transparent)", zIndex: 1 }} />
+        <div style={{ position: "absolute", top: 8, left: 12, right: 12, display: "flex", gap: 3, zIndex: 2 }}>
+          {[1, 0.5, 0.15].map((p, i) => (
+            <div key={i} style={{ flex: 1, height: 2, background: "rgba(255,255,255,0.3)", borderRadius: 1, overflow: "hidden" }}>
+              <div style={{ width: `${p * 100}%`, height: "100%", background: "#fff", borderRadius: 1 }} />
+            </div>
+          ))}
+        </div>
+        <div style={{ position: "absolute", top: 16, left: 16, right: 16, display: "flex", alignItems: "center", gap: 10, zIndex: 2 }}>
+          <div style={{ width: 32, height: 32, borderRadius: "50%", background: "linear-gradient(135deg, #f58529, #dd2a7b, #8134af)", padding: 2, flexShrink: 0 }}>
+            <div style={{ width: "100%", height: "100%", borderRadius: "50%", background: "#000", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 10, fontWeight: 700, color: "#fff" }}>RG</div>
+          </div>
+          <div style={{ flex: 1 }}>
+            <div style={{ color: "#fff", fontSize: 13, fontWeight: 600 }}>rapidgrade</div>
+            <div style={{ color: "rgba(255,255,255,0.7)", fontSize: 11 }}>Sponsored</div>
+          </div>
+          <button style={{ background: "rgba(0,0,0,0.3)", border: "none", color: "#fff", fontSize: 20, cursor: "pointer", padding: "2px 6px", borderRadius: "50%", width: 28, height: 28, display: "flex", alignItems: "center", justifyContent: "center" }}>✕</button>
+        </div>
+        {ad.primaryText && (
+          <div style={{ position: "absolute", bottom: 80, left: 16, right: 16, zIndex: 2 }}>
+            <div style={{ background: "#fff", borderRadius: 4, padding: "12px 14px", color: "#000", fontSize: 13, lineHeight: 1.4, fontWeight: 500 }}>{cut(ad.primaryText, 100)}</div>
+          </div>
+        )}
+        {ad.cta !== "No Button" && (
+          <div onClick={() => go(ad.destinationUrl)} style={{ position: "absolute", bottom: 24, left: 16, right: 16, zIndex: 2, cursor: ad.destinationUrl ? "pointer" : "default" }}>
+            <button style={{ width: "100%", background: "#fff", border: "none", borderRadius: 4, padding: "12px 16px", fontSize: 14, fontWeight: 700, color: "#000", cursor: "pointer", boxShadow: "0 1px 3px rgba(0,0,0,0.2)" }}>{ad.cta}</button>
+          </div>
+        )}
+      </div>
+    );
+
+    // ─── FACEBOOK MOBILE ────────────────────────────────────────────────────
+    const FBMobile = ({ ad }) => (
+      <div style={{ fontFamily: '"Helvetica Neue",Arial,sans-serif', background: "#fff", width: "100%", boxShadow: "0 1px 3px rgba(0,0,0,0.12)" }}>
+        <div style={{ padding: "12px 16px", display: "flex", alignItems: "center", gap: 12 }}>
+          <div style={{ width: 40, height: 40, borderRadius: "50%", background: "#1877f2", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 16, fontWeight: 700, color: "#fff", flexShrink: 0 }}>R</div>
+          <div style={{ flex: 1 }}>
+            <div style={{ fontSize: 15, fontWeight: 600, color: "#000" }}>RapidGrade</div>
+            <div style={{ fontSize: 13, color: "#65676b" }}>Sponsored · 🌐</div>
+          </div>
+          <span style={{ color: "#65676b", fontSize: 18, cursor: "pointer" }}>⋯</span>
+        </div>
+        {ad.primaryText && (
+          <div style={{ padding: "0 16px 12px", fontSize: 15, color: "#000", lineHeight: 1.5 }}>
+            {cut(ad.primaryText, 125)}
+            {ad.primaryText.length > 125 && <span style={{ color: "#65676b", cursor: "pointer" }}> See more</span>}
+          </div>
+        )}
+        <div style={{ width: "100%", aspectRatio: "1/1", background: "#f0f2f5" }}>
+          {ad.image
+            ? <img src={ad.image} style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} alt="Ad" />
+            : <div style={{ width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center", color: "#bcc0c4", fontSize: 14 }}>No image</div>}
+        </div>
+        {ad.cta !== "No Button" && (
+          <div onClick={() => go(ad.destinationUrl)} style={{ background: "#f0f2f5", borderTop: "1px solid #e5e7eb", padding: "12px 16px", display: "flex", gap: 12, cursor: ad.destinationUrl ? "pointer" : "default" }}>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ fontSize: 12, color: "#65676b", textTransform: "uppercase", letterSpacing: 0.5, fontWeight: 600, marginBottom: 3 }}>{getDomain(ad.destinationUrl)}</div>
+              <div style={{ fontSize: 15, fontWeight: 700, color: "#000", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", marginBottom: 3 }}>{cut(ad.headline, 27) || "Headline"}</div>
+              {ad.description && <div style={{ fontSize: 13, color: "#65676b", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{cut(ad.description, 30)}</div>}
+            </div>
+            <button style={{ background: "#e4e6eb", border: "none", borderRadius: 6, padding: "8px 16px", fontSize: 14, fontWeight: 600, color: "#000", cursor: "pointer", flexShrink: 0, whiteSpace: "nowrap" }}>{ad.cta}</button>
+          </div>
+        )}
+        <div style={{ padding: "10px 16px", borderTop: "1px solid #e5e7eb", fontSize: 13, color: "#65676b", display: "flex", justifyContent: "space-between" }}>
+          <span>👍 ❤️ 😮 <span style={{ marginLeft: 4 }}>2.4K</span></span>
+          <span>156 comments · 42 shares</span>
+        </div>
+        <div style={{ display: "flex", borderTop: "1px solid #e5e7eb" }}>
+          {["👍 Like", "💬 Comment", "⤴️ Share"].map((btn, i) => (
+            <button key={i} style={{ flex: 1, background: "none", border: i < 2 ? "1px solid #e5e7eb" : "none", borderLeft: "none", color: "#65676b", fontSize: 14, fontWeight: 600, cursor: "pointer", padding: "10px 0", borderRight: "none" }}>{btn}</button>
+          ))}
+        </div>
+      </div>
+    );
+
+    // ─── FACEBOOK DESKTOP ───────────────────────────────────────────────────
+    const FBDesktop = ({ ad }) => {
+      const Post = ({ author, subtext, image, content }) => (
+        <div style={{ background: "#fff", marginBottom: 16, borderRadius: 8, overflow: "hidden", border: "1px solid #e5e7eb" }}>
+          <div style={{ padding: "12px 16px", display: "flex", alignItems: "center", gap: 12, borderBottom: "1px solid #e5e7eb" }}>
+            <div style={{ width: 40, height: 40, borderRadius: "50%", background: "#d0d0d0", flexShrink: 0 }} />
+            <div style={{ flex: 1 }}>
+              <div style={{ fontSize: 14, fontWeight: 600, color: "#000" }}>{author}</div>
+              <div style={{ fontSize: 12, color: "#65676b" }}>{subtext}</div>
+            </div>
+            <span style={{ color: "#65676b", fontSize: 18, cursor: "pointer" }}>⋯</span>
+          </div>
+          {content && <div style={{ padding: "12px 16px", fontSize: 15, color: "#050505", lineHeight: 1.5 }}>{content}</div>}
+          {image && (
+            <div style={{ width: "100%", aspectRatio: "1.91/1", background: "#f0f2f5" }}>
+              <div style={{ width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center", color: "#bcc0c4", fontSize: 14 }}>{image}</div>
+            </div>
+          )}
+          <div style={{ padding: "8px 16px", fontSize: 13, color: "#65676b", display: "flex", justifyContent: "space-between", borderTop: "1px solid #e5e7eb" }}>
+            <span>👍 {Math.floor(Math.random() * 5000) + 100}</span>
+            <span>{Math.floor(Math.random() * 300)} comments</span>
+          </div>
+          <div style={{ display: "flex", borderTop: "1px solid #e5e7eb" }}>
+            {["👍 Like", "💬 Comment", "⤴️ Share"].map((btn, i) => (
+              <button key={i} style={{ flex: 1, background: "none", border: "none", color: "#65676b", fontSize: 13, fontWeight: 600, cursor: "pointer", padding: "10px 0", borderRight: i < 2 ? "1px solid #e5e7eb" : "none" }}>{btn}</button>
+            ))}
+          </div>
+        </div>
+      );
+
+      return (
+        <div style={{ fontFamily: '"Helvetica Neue",Arial,sans-serif', background: "#f0f2f5", width: 1200, height: 600, display: "flex", position: "relative", overflow: "hidden" }}>
+          <div style={{ position: "absolute", top: 0, left: 0, right: 0, height: 56, background: "#fff", borderBottom: "1px solid #ccc", display: "flex", alignItems: "center", justifyContent: "space-between", paddingLeft: 16, paddingRight: 16, zIndex: 100 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 8, fontWeight: 700, fontSize: 28, color: "#1877f2" }}>f</div>
+            <div style={{ flex: 1, maxWidth: 240, marginLeft: 20 }}>
+              <input placeholder="🔍 Search Facebook" style={{ width: "100%", background: "#f0f2f5", border: "1px solid #ccc", borderRadius: 20, padding: "8px 16px", fontSize: 14, outline: "none" }} />
+            </div>
+            <div style={{ display: "flex", gap: 16, alignItems: "center", marginLeft: 20 }}>
+              <span style={{ cursor: "pointer", fontSize: 20 }}>🏠</span>
+              <span style={{ cursor: "pointer", fontSize: 20 }}>👥</span>
+              <span style={{ cursor: "pointer", fontSize: 20 }}>🎮</span>
+              <span style={{ cursor: "pointer", fontSize: 20 }}>⋯</span>
+            </div>
+          </div>
+          <div style={{ marginTop: 56, display: "flex", flex: 1, width: "100%" }}>
+            <div style={{ width: 200, background: "#fff", borderRight: "1px solid #e5e7eb", padding: "16px 8px", overflowY: "auto" }}>
+              {["Home", "Friends", "Videos", "Groups", "Pages"].map((item, i) => (
+                <div key={i} style={{ padding: "12px 16px", cursor: "pointer", borderRadius: 8, background: i === 0 ? "#f0f2f5" : "transparent", fontSize: 15, fontWeight: 600, color: "#050505" }}>{item}</div>
+              ))}
+            </div>
+            <div style={{ flex: 1, overflowY: "auto", padding: "16px", background: "#f0f2f5", maxWidth: 560, margin: "0 auto" }}>
+              <div style={{ display: "flex", gap: 8, marginBottom: 16, overflowX: "auto" }}>
+                {[1, 2, 3, 4].map(i => (
+                  <div key={i} style={{ minWidth: 100, height: 150, background: "#d0d0d0", borderRadius: 12, flexShrink: 0 }} />
+                ))}
+              </div>
+              <Post author="Sarah Johnson" subtext="Just now" content="Just finished the best hiking trip! 🏔️" image="📸" />
+              <div style={{ background: "#fff", marginBottom: 16, borderRadius: 8, overflow: "hidden", border: "1px solid #e5e7eb" }}>
+                <div style={{ padding: "12px 16px", display: "flex", alignItems: "center", gap: 12, borderBottom: "1px solid #e5e7eb" }}>
+                  <div style={{ width: 40, height: 40, borderRadius: "50%", background: "#1877f2", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 16, fontWeight: 700, color: "#fff", flexShrink: 0 }}>R</div>
+                  <div style={{ flex: 1 }}>
+                    <div style={{ fontSize: 14, fontWeight: 600, color: "#000" }}>RapidGrade</div>
+                    <div style={{ fontSize: 12, color: "#65676b" }}>Sponsored · 🌐</div>
+                  </div>
+                  <span style={{ color: "#65676b", fontSize: 18, cursor: "pointer" }}>⋯</span>
+                </div>
+                {ad.primaryText && (
+                  <div style={{ padding: "12px 16px 0", fontSize: 15, color: "#050505", lineHeight: 1.5 }}>
+                    {cut(ad.primaryText, 125)}
+                    {ad.primaryText.length > 125 && <span style={{ color: "#0a66c2", cursor: "pointer" }}> See more</span>}
+                  </div>
+                )}
+                <div style={{ width: "100%", aspectRatio: "1.91/1", background: "#f0f2f5", marginTop: 12 }}>
+                  {ad.image
+                    ? <img src={ad.image} style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} alt="Ad" />
+                    : <div style={{ width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center", color: "#bcc0c4", fontSize: 14 }}>No image</div>}
+                </div>
+                <div style={{ padding: "8px 16px", borderTop: "1px solid #e5e7eb", borderBottom: "1px solid #e5e7eb", fontSize: 13, color: "#65676b", display: "flex", justifyContent: "space-between" }}>
+                  <span>👍 ❤️ 😮 2.4K</span>
+                  <span>156 comments · 42 shares</span>
+                </div>
+                <div style={{ display: "flex", borderBottom: "1px solid #e5e7eb" }}>
+                  {["👍 Like", "💬 Comment", "⤴️ Share"].map((btn, i) => (
+                    <button key={i} style={{ flex: 1, background: "none", border: "none", color: "#65676b", fontSize: 13, fontWeight: 600, cursor: "pointer", padding: "10px 0", borderRight: i < 2 ? "1px solid #e5e7eb" : "none" }}>{btn}</button>
+                  ))}
+                </div>
+                {ad.cta !== "No Button" && (
+                  <div onClick={() => go(ad.destinationUrl)} style={{ background: "#f0f2f5", padding: "12px 16px", display: "flex", gap: 12, cursor: ad.destinationUrl ? "pointer" : "default", alignItems: "flex-start" }}>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontSize: 11, color: "#65676b", textTransform: "uppercase", letterSpacing: 0.5, fontWeight: 600, marginBottom: 4 }}>{getDomain(ad.destinationUrl)}</div>
+                      <div style={{ fontSize: 14, fontWeight: 700, color: "#050505", marginBottom: 3, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{cut(ad.headline, 40) || "Headline"}</div>
+                      {ad.description && <div style={{ fontSize: 12, color: "#65676b" }}>{cut(ad.description, 60)}</div>}
+                    </div>
+                    <button style={{ background: "#0a66c2", border: "none", borderRadius: 6, padding: "8px 16px", fontSize: 13, fontWeight: 600, color: "#fff", cursor: "pointer", flexShrink: 0, whiteSpace: "nowrap", height: "fit-content" }}>{ad.cta}</button>
+                  </div>
+                )}
+              </div>
+              <Post author="Tech Daily" subtext="2 hours ago" content="Check out the latest innovations in web development" image="💻" />
+            </div>
+            <div style={{ width: 280, background: "#fff", borderLeft: "1px solid #e5e7eb", padding: "16px", overflowY: "auto" }}>
+              <div style={{ fontSize: 14, fontWeight: 700, color: "#000", marginBottom: 12 }}>Sponsored</div>
+              {[1, 2].map(i => (
+                <div key={i} style={{ padding: "12px", background: "#f0f2f5", borderRadius: 8, marginBottom: 8, fontSize: 12 }}>
+                  <div style={{ fontWeight: 600, color: "#000", marginBottom: 4 }}>Sponsored Ad {i}</div>
+                  <div style={{ color: "#65676b" }}>www.example.com</div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      );
+    };
+
+    // ─── PHONE FRAME ────────────────────────────────────────────────────────
+    const PhoneFrame = ({ children }) => (
+      <div style={{ background: "#1c1c1e", borderRadius: 50, padding: "14px 10px 22px", boxShadow: "0 0 0 1px #3a3a3c, inset 0 0 0 1px #2c2c2e, 0 30px 80px rgba(0,0,0,0.18)", display: "inline-block", position: "relative" }}>
+        <div style={{ position: "absolute", left: -3, top: 90, width: 3, height: 26, background: "#3a3a3c", borderRadius: "2px 0 0 2px" }} />
+        <div style={{ position: "absolute", left: -3, top: 128, width: 3, height: 56, background: "#3a3a3c", borderRadius: "2px 0 0 2px" }} />
+        <div style={{ position: "absolute", left: -3, top: 194, width: 3, height: 56, background: "#3a3a3c", borderRadius: "2px 0 0 2px" }} />
+        <div style={{ position: "absolute", right: -3, top: 145, width: 3, height: 72, background: "#3a3a3c", borderRadius: "0 2px 2px 0" }} />
+        <div style={{ width: 120, height: 28, background: "#1c1c1e", borderRadius: 18, margin: "0 auto 8px", display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}>
+          <div style={{ width: 5, height: 5, borderRadius: "50%", background: "#2c2c2e" }} />
+          <div style={{ width: 28, height: 7, borderRadius: 4, background: "#2c2c2e" }} />
+          <div style={{ width: 5, height: 5, borderRadius: "50%", background: "#2c2c2e" }} />
+        </div>
+        <div style={{ width: 375, height: 812, background: "#fff", borderRadius: 32, overflow: "hidden", position: "relative", display: "flex", flexDirection: "column" }}>
+          <div style={{ height: 44, padding: "0 24px", display: "flex", alignItems: "center", justifyContent: "space-between", background: "#fff", flexShrink: 0 }}>
+            <span style={{ fontSize: 15, fontWeight: 700, color: "#000", letterSpacing: -0.3 }}>9:41</span>
+            <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+              <svg viewBox="0 0 17 12" fill="#000" style={{ width: 17, height: 12 }}><rect x="0" y="3" width="3" height="9" rx="1"/><rect x="4.5" y="2" width="3" height="10" rx="1"/><rect x="9" y="0.5" width="3" height="11.5" rx="1"/><rect x="13.5" y="0" width="3" height="12" rx="1" opacity="0.3"/></svg>
+              <svg viewBox="0 0 16 12" fill="#000" style={{ width: 16, height: 12 }}><path d="M8 2.4C10.8 2.4 13.3 3.5 15.1 5.3L16 4.3C13.9 2.2 11.1 1 8 1S2.1 2.2 0 4.3l.9 1C2.7 3.5 5.2 2.4 8 2.4z" opacity="0.3"/><path d="M8 4.8c2 0 3.8.8 5.1 2.1l.9-1C12.4 4.3 10.3 3.4 8 3.4S3.6 4.3 2 5.9l.9 1C4.2 5.6 6 4.8 8 4.8z" opacity="0.6"/><path d="M8 7.2c1.2 0 2.3.5 3.1 1.3l.9-1C10.9 6.5 9.5 5.8 8 5.8s-2.9.7-4 1.7l.9 1C5.7 7.7 6.8 7.2 8 7.2z"/><circle cx="8" cy="11" r="1.3"/></svg>
+              <svg viewBox="0 0 25 12" fill="none" style={{ width: 25, height: 12 }}><rect x="0.5" y="0.5" width="21" height="11" rx="3.5" stroke="#000" strokeOpacity="0.35"/><rect x="2" y="2" width="17" height="8" rx="2" fill="#000"/><path d="M23 4.5v3a2 2 0 0 0 0-3z" fill="#000" opacity="0.4"/></svg>
+            </div>
+          </div>
+          <div style={{ flex: 1, overflow: "hidden", display: "flex", flexDirection: "column" }}>
+            {children}
+          </div>
+        </div>
+        <div style={{ width: 134, height: 4, background: "#3a3a3c", borderRadius: 2, margin: "12px auto 0" }} />
+      </div>
+    );
+
+    // ─── MONITOR FRAME ──────────────────────────────────────────────────────
+    const MonitorFrame = ({ children }) => (
+      <div style={{ perspective: "1200px" }}>
+        <div style={{ background: "linear-gradient(135deg, #2a2a2c, #1c1c1e, #2a2a2c)", borderRadius: "32px 32px 14px 14px", padding: "22px 22px 14px 22px", boxShadow: "0 0 0 2px #0a0a0a, 0 40px 100px rgba(0,0,0,0.5), inset 0 1px 0 rgba(255,255,255,0.1)", width: 1280 }}>
+          <div style={{ position: "relative", borderRadius: "24px 24px 10px 10px", overflow: "hidden", boxShadow: "inset 0 0 50px rgba(0,0,0,0.6), 0 0 25px rgba(0,0,0,0.3)" }}>
+            <div style={{ background: "#f0f2f5", display: "flex", alignItems: "center", justifyContent: "center", overflow: "hidden", height: 560 }}>
+              <div style={{ transform: "scale(0.85)", transformOrigin: "center", display: "flex", alignItems: "center", justifyContent: "center" }}>{children}</div>
+            </div>
+          </div>
+          <div style={{ marginTop: "10px", height: "10px", background: "linear-gradient(to bottom, #3a3a3c, #2a2a2c)", borderRadius: "0 0 24px 24px", display: "flex", alignItems: "flex-end", justifyContent: "center", paddingBottom: "8px" }}>
+            <div style={{ width: "160px", height: "5px", background: "#1c1c1e", borderRadius: "2px" }} />
+          </div>
+        </div>
+        <div style={{ marginTop: "-2px", height: "28px", background: "linear-gradient(to bottom, #2a2a2c, #1c1c1e)", borderRadius: "0 0 18px 18px", display: "flex", alignItems: "center", justifyContent: "center" }}>
+          <div style={{ width: "320px", height: "12px", background: "linear-gradient(to bottom, #3a3a3c, #2a2a2c)", borderRadius: "4px", boxShadow: "inset 0 1px 2px rgba(0,0,0,0.5)" }} />
+        </div>
+      </div>
+    );
+
+    // ─── MAIN APP ──────────────────────────────────────────────────────────
+    function App() {
+      const [ad, setAd]                  = useState({ ...EMPTY });
+      const [placement, setPlacement]    = useState("ig-feed");
+      const [saved, setSaved]            = useState([]);
+      const [showLib, setShowLib]        = useState(false);
+      const [dragging, setDragging]      = useState(false);
+      const [saveMsg, setSaveMsg]        = useState("");
+      const [mockupMode, setMockupMode]  = useState("phone");
+      const [carouselEditIdx, setCarouselEditIdx] = useState(0);
+      const fileRef = useRef();
+
+      useEffect(() => {
+        (async () => {
+          try {
+            const r = await storage.get("rg-ads-index");
+            if (r) setSaved(JSON.parse(r.value));
+          } catch(e) {}
+        })();
+      }, []);
+
+      const upd = useCallback((k, v) => setAd(p => ({ ...p, [k]: v })), []);
+
+      const handleFile = useCallback(async (file) => {
+        if (!file?.type.startsWith("image/")) return;
+        const imgData = await resizeImg(file);
+        setAd(p => {
+          if (p.adType === "carousel") {
+            const cards = [...(p.carouselCards || [])];
+            const idx = Math.min(carouselEditIdx, cards.length - 1);
+            cards[idx] = { ...cards[idx], image: imgData };
+            return { ...p, carouselCards: cards };
+          }
+          return { ...p, image: imgData };
+        });
+      }, [carouselEditIdx]);
+
+      const onDrop = useCallback((e) => {
+        e.preventDefault(); setDragging(false);
+        handleFile(e.dataTransfer.files[0]);
+      }, [handleFile]);
+
+      const addCarouselCard = useCallback(() => {
+        setAd(p => {
+          if ((p.carouselCards || []).length >= 10) return p;
+          return {
+            ...p,
+            carouselCards: [...(p.carouselCards || []), { id: `card_${Date.now()}`, image: null, headline: "" }],
+          };
+        });
+      }, []);
+
+      const removeCarouselCard = useCallback((idx) => {
+        setAd(p => {
+          const cards = (p.carouselCards || []).filter((_, i) => i !== idx);
+          return { ...p, carouselCards: cards };
+        });
+        setCarouselEditIdx(p => Math.max(0, Math.min(p, idx > 0 ? idx - 1 : 0)));
+      }, []);
+
+      const switchToCarousel = useCallback(() => {
+        setAd(p => {
+          const hasCards = (p.carouselCards || []).length >= 2;
+          if (hasCards) return { ...p, adType: "carousel" };
+          // First time: seed first card with the existing single image
+          return {
+            ...p,
+            adType: "carousel",
+            carouselCards: [
+              { id: "card_0", image: p.image || null, headline: p.headline || "" },
+              { id: "card_1", image: null, headline: "" },
+            ],
+          };
+        });
+        setCarouselEditIdx(0);
+      }, []);
+
+      const doSave = async () => {
+        const id = ad.id || `ad_${Date.now()}`;
+        const data = { ...ad, id, savedAt: new Date().toISOString() };
+        try {
+          await storage.set(`rg-ad:${id}`, JSON.stringify(data));
+          let idx = [...saved];
+          const entry = { id, name: ad.name || "Untitled", headline: ad.headline, hasImage: !!ad.image, savedAt: data.savedAt };
+          const pos = idx.findIndex(a => a.id === id);
+          if (pos >= 0) idx[pos] = entry; else idx.unshift(entry);
+          await storage.set("rg-ads-index", JSON.stringify(idx));
+          setSaved(idx); setAd(p => ({ ...p, id }));
+          setSaveMsg("Saved ✓");
+        } catch(e) { setSaveMsg("Error"); }
+        setTimeout(() => setSaveMsg(""), 2200);
+      };
+
+      const doLoad = async (id) => {
+        try {
+          const r = await storage.get(`rg-ad:${id}`);
+          if (r) { setAd(JSON.parse(r.value)); setShowLib(false); setCarouselEditIdx(0); }
+        } catch(e) {}
+      };
+
+      const doDelete = async (id, e) => {
+        e.stopPropagation();
+        try {
+          await storage.delete(`rg-ad:${id}`);
+          const nl = saved.filter(a => a.id !== id);
+          await storage.set("rg-ads-index", JSON.stringify(nl));
+          setSaved(nl);
+        } catch(e) {}
+      };
+
+      const doExport = () => {
+        const allAds = saved.map(s => {
+          const item = localStorage.getItem(`rg-ad:${s.id}`);
+          return item ? JSON.parse(item) : null;
+        }).filter(Boolean);
+        const backup = { exported: new Date().toISOString(), ads: allAds };
+        const json = JSON.stringify(backup, null, 2);
+        const blob = new Blob([json], { type: "application/json" });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = `rapidgrade-ads-backup-${new Date().toISOString().split("T")[0]}.json`;
+        a.click();
+        URL.revokeObjectURL(url);
+      };
+
+      const preview = () => {
+        const p = { ad };
+        let content;
+        if (placement === "ig-stories") content = <IGStories {...p} />;
+        else if (placement === "fb-mobile") content = <FBMobile {...p} />;
+        else if (placement === "fb-desktop") content = <FBDesktop {...p} />;
+        else content = <IGFeed {...p} />;
+        if (mockupMode === "desktop") return <MonitorFrame>{content}</MonitorFrame>;
+        return <PhoneFrame>{content}</PhoneFrame>;
+      };
+
+      const I = { width: "100%", background: "#fff", border: "1px solid #d0d0d0", borderRadius: 8, padding: "11px 14px", color: "#1d1d1f", fontSize: 14, fontFamily: "inherit", outline: "none", resize: "none", transition: "border-color .2s", fontWeight: "500" };
+      const L = { fontSize: 12, fontWeight: 600, color: "#1d1d1f", letterSpacing: "0.04em", textTransform: "uppercase", display: "block", marginBottom: 6 };
+
+      const isCarousel  = ad.adType === "carousel";
+      const carouselCards = ad.carouselCards || [];
+      const editCard    = carouselCards[carouselEditIdx] || {};
+      const headlineVal = isCarousel ? (editCard.headline || "") : ad.headline;
+
+      return (
+        <div style={{ display: "flex", flexDirection: "column", height: "100vh", background: "linear-gradient(135deg, #f5f5f7 0%, #ffffff 100%)", color: "#1d1d1f", fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif', overflow: "hidden" }}>
+          {/* ── HEADER ── */}
+          <div style={{ display: "flex", flexDirection: "column", flexShrink: 0, background: "rgba(255,255,255,0.8)", backdropFilter: "blur(10px)", borderBottom: "1px solid rgba(0,0,0,0.08)" }}>
+            <div style={{ height: 60, display: "flex", alignItems: "center", justifyContent: "space-between", padding: "0 28px" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
+                <div style={{ width: 32, height: 32, borderRadius: 8, background: "linear-gradient(135deg, #f59e0b, #d97706)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 16, fontWeight: 900, color: "#fff" }}>⚡</div>
+                <div>
+                  <div style={{ fontWeight: 700, fontSize: 16, letterSpacing: -0.5, color: "#1d1d1f" }}>Meta Ad Preview</div>
+                  <div style={{ fontSize: 12, color: "#888", marginTop: 2 }}>RapidGrade</div>
+                </div>
+              </div>
+              <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
+                <button onClick={() => setShowLib(!showLib)} style={{ background: showLib ? "rgba(0,0,0,0.08)" : "transparent", color: "#1d1d1f", border: "none", borderRadius: 8, padding: "8px 16px", fontSize: 14, fontWeight: 600, cursor: "pointer", transition: "all .2s" }}>
+                  Library {saved.length > 0 && `(${saved.length})`}
+                </button>
+                <button onClick={() => { setAd({ ...EMPTY }); setCarouselEditIdx(0); }} style={{ background: "transparent", color: "#1d1d1f", border: "none", borderRadius: 8, padding: "8px 16px", fontSize: 14, fontWeight: 600, cursor: "pointer" }}>
+                  + New
+                </button>
+                {saved.length > 0 && (
+                  <button onClick={doExport} style={{ background: "transparent", color: "#888", border: "none", borderRadius: 8, padding: "8px 16px", fontSize: 14, fontWeight: 600, cursor: "pointer" }}>
+                    ↓ Backup
+                  </button>
+                )}
+                <button onClick={doSave} style={{ background: "#f59e0b", color: "#fff", border: "none", borderRadius: 8, padding: "8px 20px", fontSize: 14, fontWeight: 700, cursor: "pointer", transition: "all .2s" }}>
+                  {saveMsg || "Save"}
+                </button>
+              </div>
+            </div>
+
+            <div style={{ height: 50, display: "flex", alignItems: "center", gap: 16, padding: "0 28px" }}>
+              <div style={{ display: "flex", gap: 4, background: "rgba(0,0,0,0.05)", borderRadius: 8, padding: 3 }}>
+                <button onClick={() => setMockupMode("phone")} style={{ background: mockupMode === "phone" ? "#fff" : "transparent", color: "#1d1d1f", border: "none", borderRadius: 6, padding: "6px 12px", fontSize: 12, fontWeight: 600, cursor: "pointer", transition: "all .2s", boxShadow: mockupMode === "phone" ? "0 1px 3px rgba(0,0,0,0.08)" : "none" }}>📱 Phone</button>
+                <button onClick={() => setMockupMode("desktop")} style={{ background: mockupMode === "desktop" ? "#fff" : "transparent", color: "#1d1d1f", border: "none", borderRadius: 6, padding: "6px 12px", fontSize: 12, fontWeight: 600, cursor: "pointer", transition: "all .2s", boxShadow: mockupMode === "desktop" ? "0 1px 3px rgba(0,0,0,0.08)" : "none" }}>🖥️ Monitor</button>
+              </div>
+              <div style={{ display: "flex", gap: 4 }}>
+                {PLACEMENTS.filter(p => {
+                  if (mockupMode === "phone") return ["ig-feed", "ig-stories", "fb-mobile"].includes(p.id);
+                  else return ["ig-feed", "ig-stories", "fb-desktop"].includes(p.id);
+                }).map(p => (
+                  <button key={p.id} onClick={() => setPlacement(p.id)} style={{ background: placement === p.id ? "#fff" : "transparent", color: "#1d1d1f", border: "none", borderRadius: 6, padding: "6px 12px", fontSize: 12, fontWeight: 600, cursor: "pointer", transition: "all .2s", boxShadow: placement === p.id ? "0 1px 3px rgba(0,0,0,0.08)" : "none" }}>{p.label}</button>
+                ))}
+              </div>
+            </div>
+          </div>
+
+          <div style={{ display: "flex", flex: 1, overflow: "hidden" }}>
+            {/* ── LIBRARY ── */}
+            {showLib && (
+              <div style={{ width: 280, borderRight: "1px solid rgba(0,0,0,0.08)", overflowY: "auto", background: "#fff", flexShrink: 0, padding: "20px" }}>
+                <div style={{ marginBottom: 16 }}>
+                  <div style={{ fontSize: 12, fontWeight: 700, color: "#1d1d1f", textTransform: "uppercase" }}>Saved Ads</div>
+                  <div style={{ fontSize: 13, color: "#888", marginTop: 4 }}>{saved.length} ad{saved.length !== 1 ? "s" : ""}</div>
+                </div>
+                <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                  {saved.length === 0 && <div style={{ color: "#bbb", fontSize: 13, textAlign: "center", padding: "40px 0" }}>No ads saved yet.</div>}
+                  {saved.map(s => (
+                    <div key={s.id} onClick={() => doLoad(s.id)} style={{ background: ad.id === s.id ? "#f5f5f7" : "transparent", border: `1px solid ${ad.id === s.id ? "#d0d0d0" : "transparent"}`, borderRadius: 10, padding: "12px", cursor: "pointer", display: "flex", gap: 12, alignItems: "flex-start", transition: "all .2s" }}>
+                      <div style={{ width: 40, height: 40, borderRadius: 8, background: "#f5f5f7", flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 16 }}>
+                        {s.hasImage ? "🖼" : "📋"}
+                      </div>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ fontSize: 13, fontWeight: 600, color: "#1d1d1f", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{s.name || "Untitled"}</div>
+                        <div style={{ fontSize: 12, color: "#888", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", marginTop: 2 }}>{s.headline || "No headline"}</div>
+                        <div style={{ fontSize: 11, color: "#bbb", marginTop: 4 }}>{new Date(s.savedAt).toLocaleDateString()}</div>
+                      </div>
+                      <button onClick={(e) => doDelete(s.id, e)} style={{ background: "none", border: "none", color: "#bbb", cursor: "pointer", fontSize: 16, padding: 0, flexShrink: 0 }}>✕</button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* ── FORM ── */}
+            <div style={{ width: 340, borderRight: "1px solid rgba(0,0,0,0.08)", overflowY: "auto", padding: "24px 20px", flexShrink: 0, background: "#fff", display: "flex", flexDirection: "column", gap: 18 }}>
+
+              <div>
+                <label style={L}>Ad Name</label>
+                <input value={ad.name} onChange={e => upd("name", e.target.value)} placeholder="Summer Collection" style={I} />
+              </div>
+
+              {/* ── Creative ── */}
+              <div>
+                <label style={L}>Creative</label>
+
+                {/* Single / Carousel toggle */}
+                <div style={{ display: "flex", gap: 4, background: "rgba(0,0,0,0.05)", borderRadius: 8, padding: 3, marginBottom: 10 }}>
+                  <button
+                    onClick={() => upd("adType", "single")}
+                    style={{ flex: 1, background: !isCarousel ? "#fff" : "transparent", color: "#1d1d1f", border: "none", borderRadius: 6, padding: "6px 8px", fontSize: 12, fontWeight: 600, cursor: "pointer", transition: "all .2s", boxShadow: !isCarousel ? "0 1px 3px rgba(0,0,0,0.08)" : "none" }}
+                  >Single</button>
+                  <button
+                    onClick={switchToCarousel}
+                    style={{ flex: 1, background: isCarousel ? "#fff" : "transparent", color: "#1d1d1f", border: "none", borderRadius: 6, padding: "6px 8px", fontSize: 12, fontWeight: 600, cursor: "pointer", transition: "all .2s", boxShadow: isCarousel ? "0 1px 3px rgba(0,0,0,0.08)" : "none" }}
+                  >Carousel</button>
+                </div>
+
+                {/* Aspect ratio — Instagram feed: landscape 1.91:1, square 1:1, portrait 4:5 */}
+                <div style={{ display: "flex", gap: 6, marginBottom: 8 }}>
+                  {ASPECT_RATIOS.map(ar => (
+                    <button key={ar.id} onClick={() => upd("aspectRatio", ar.value)} style={{ flex: 1, background: ad.aspectRatio === ar.value ? "#1d1d1f" : "#f5f5f7", color: ad.aspectRatio === ar.value ? "#fff" : "#666", border: "none", borderRadius: 6, padding: "6px 0", fontSize: 12, fontWeight: 600, cursor: "pointer", transition: "all .15s" }}>{ar.label}</button>
+                  ))}
+                </div>
+
+                {/* Carousel card grid */}
+                {isCarousel ? (
+                  <div>
+                    <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 8 }}>
+                      {carouselCards.map((card, idx) => (
+                        <div key={card.id} style={{ position: "relative" }}>
+                          <div
+                            onClick={() => { setCarouselEditIdx(idx); fileRef.current?.click(); }}
+                            style={{ width: 68, height: 68, borderRadius: 8, background: "#f5f5f7", overflow: "hidden", cursor: "pointer", border: `2px solid ${carouselEditIdx === idx ? "#f59e0b" : "#e0e0e0"}`, boxSizing: "border-box", transition: "border-color .15s" }}
+                          >
+                            {card.image
+                              ? <img src={card.image} style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} alt={`Card ${idx + 1}`} />
+                              : <div style={{ width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center", color: "#bbb", fontSize: 22 }}>+</div>
+                            }
+                          </div>
+                          {carouselCards.length > 2 && (
+                            <button
+                              onClick={e => { e.stopPropagation(); removeCarouselCard(idx); }}
+                              style={{ position: "absolute", top: -6, right: -6, width: 18, height: 18, borderRadius: "50%", background: "#ff3b30", border: "2px solid #fff", color: "#fff", cursor: "pointer", fontSize: 9, display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 700, lineHeight: 1 }}
+                            >✕</button>
+                          )}
+                          <div style={{ textAlign: "center", fontSize: 10, marginTop: 3, fontWeight: carouselEditIdx === idx ? 700 : 400, color: carouselEditIdx === idx ? "#f59e0b" : "#888" }}>{idx + 1}</div>
+                        </div>
+                      ))}
+                      {carouselCards.length < 10 && (
+                        <div style={{ display: "flex", flexDirection: "column", alignItems: "center" }}>
+                          <button
+                            onClick={addCarouselCard}
+                            style={{ width: 68, height: 68, borderRadius: 8, background: "#f5f5f7", border: "2px dashed #d0d0d0", cursor: "pointer", fontSize: 26, color: "#bbb", display: "flex", alignItems: "center", justifyContent: "center" }}
+                          >+</button>
+                          <div style={{ fontSize: 10, color: "#bbb", marginTop: 3 }}>Add</div>
+                        </div>
+                      )}
+                    </div>
+                    <div style={{ fontSize: 11, color: "#aaa" }}>Click a card to upload its image. Gold border = editing.</div>
+                  </div>
+                ) : (
+                  /* Single image drop zone */
+                  <div onDrop={onDrop} onDragOver={(e) => { e.preventDefault(); setDragging(true); }} onDragLeave={() => setDragging(false)} onClick={() => !ad.image && fileRef.current?.click()} style={{ border: `2px dashed ${dragging ? "#f59e0b" : "#d0d0d0"}`, borderRadius: 12, background: dragging ? "rgba(245,158,11,0.05)" : ad.image ? "transparent" : "#f5f5f7", cursor: ad.image ? "default" : "pointer", transition: "all .2s", overflow: "hidden", position: "relative" }}>
+                    {ad.image ? (
+                      <div>
+                        <img src={ad.image} style={{ width: "100%", aspectRatio: "1/1", objectFit: "cover", display: "block" }} alt="Creative" />
+                        <div style={{ position: "absolute", top: 8, right: 8, display: "flex", gap: 6 }}>
+                          <button onClick={() => fileRef.current?.click()} style={{ background: "rgba(255,255,255,.9)", color: "#1d1d1f", border: "none", borderRadius: 6, padding: "6px 12px", fontSize: 12, cursor: "pointer", fontWeight: 600 }}>Change</button>
+                          <button onClick={() => upd("image", null)} style={{ background: "rgba(255,255,255,.9)", color: "#1d1d1f", border: "none", borderRadius: 6, width: 28, height: 28, fontSize: 12, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}>✕</button>
+                        </div>
+                      </div>
+                    ) : (
+                      <div style={{ padding: "28px 0", textAlign: "center" }}>
+                        <div style={{ fontSize: 24, marginBottom: 8, opacity: 0.4 }}>↑</div>
+                        <div style={{ fontSize: 13, color: "#1d1d1f", fontWeight: 600 }}>Drop or click</div>
+                        <div style={{ fontSize: 12, color: "#888", marginTop: 4 }}>1080×1080 recommended</div>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                <input ref={fileRef} type="file" accept="image/*" style={{ display: "none" }} onChange={e => { handleFile(e.target.files[0]); e.target.value = ""; }} />
+              </div>
+
+              <div>
+                <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6 }}>
+                  <label style={{ ...L, marginBottom: 0 }}>Primary Text</label>
+                  <span style={{ fontSize: 12, fontFamily: "monospace", color: cc(ad.primaryText.length, LIMITS.primaryText.rec, LIMITS.primaryText.max), fontWeight: 700 }}>
+                    {ad.primaryText.length}/500
+                  </span>
+                </div>
+                <textarea value={ad.primaryText} onChange={e => upd("primaryText", e.target.value)} placeholder="Caption..." rows={5} style={{ ...I, lineHeight: 1.6 }} />
+                {ad.primaryText.length > 125 && <div style={{ fontSize: 12, color: "#d70015", marginTop: 6 }}>⚠ Truncates at 125 characters</div>}
+              </div>
+
+              <div>
+                <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6 }}>
+                  <label style={{ ...L, marginBottom: 0 }}>
+                    {isCarousel ? `Card ${carouselEditIdx + 1} Headline` : "Headline"}
+                  </label>
+                  <span style={{ fontSize: 12, fontFamily: "monospace", color: cc(headlineVal.length, LIMITS.headline.rec, LIMITS.headline.max), fontWeight: 700 }}>
+                    {headlineVal.length}/40
+                  </span>
+                </div>
+                <input
+                  value={headlineVal}
+                  onChange={e => {
+                    const val = e.target.value;
+                    if (isCarousel) {
+                      setAd(p => {
+                        const cards = [...(p.carouselCards || [])];
+                        const idx = Math.min(carouselEditIdx, cards.length - 1);
+                        cards[idx] = { ...cards[idx], headline: val };
+                        return { ...p, carouselCards: cards };
+                      });
+                    } else {
+                      upd("headline", val);
+                    }
+                  }}
+                  placeholder={isCarousel ? `Card ${carouselEditIdx + 1} headline…` : "Bold text below image"}
+                  style={I}
+                  maxLength={40}
+                />
+              </div>
+
+              <div>
+                <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6 }}>
+                  <label style={{ ...L, marginBottom: 0 }}>Description</label>
+                  <span style={{ fontSize: 12, fontFamily: "monospace", color: cc(ad.description.length, LIMITS.description.rec, LIMITS.description.max), fontWeight: 700 }}>
+                    {ad.description.length}/125
+                  </span>
+                </div>
+                <input value={ad.description} onChange={e => upd("description", e.target.value)} placeholder="Optional" style={I} />
+              </div>
+
+              <div>
+                <label style={L}>CTA Button</label>
+                <select value={ad.cta} onChange={e => upd("cta", e.target.value)} style={{ ...I, cursor: "pointer", appearance: "none", WebkitAppearance: "none" }}>
+                  {CTA_OPTIONS.map(o => <option key={o} value={o}>{o}</option>)}
+                </select>
+              </div>
+
+              <div>
+                <label style={L}>Destination URL</label>
+                <div style={{ display: "flex", gap: 8 }}>
+                  <input value={ad.destinationUrl} onChange={e => upd("destinationUrl", e.target.value)} placeholder="getrapidgrade.com" style={{ ...I, flex: 1 }} />
+                  {ad.destinationUrl && <button onClick={() => go(ad.destinationUrl)} style={{ background: "#f5f5f7", border: "1px solid #d0d0d0", color: "#888", borderRadius: 8, padding: "11px 14px", cursor: "pointer", fontSize: 16, flexShrink: 0 }}>↗</button>}
+                </div>
+              </div>
+            </div>
+
+            {/* ── PREVIEW ── */}
+            <div style={{ flex: 1, overflow: "auto", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: "32px 20px 40px", background: "linear-gradient(135deg, #f5f5f7 0%, #ffffff 100%)" }}>
+              {preview()}
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    ReactDOM.createRoot(document.getElementById("root")).render(<App />);
+  </script>
+</body>
+</html>
