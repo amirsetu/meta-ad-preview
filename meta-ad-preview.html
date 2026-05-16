@@ -7,6 +7,7 @@
   <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
   <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
   <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <script src="https://unpkg.com/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
     html, body, #root { height: 100%; width: 100%; }
@@ -100,6 +101,8 @@
       ],
     };
 
+    const DEFAULT_BRAND = { name: "rapidgrade", displayName: "RapidGrade", initials: "RG" };
+
     const getDomain = (url) => {
       if (!url) return "getrapidgrade.com";
       try { return new URL(url.startsWith("http") ? url : "https://" + url).hostname.replace("www.", ""); }
@@ -141,7 +144,7 @@
     //   Square    1:1    → container is 375 × 375px
     //   Portrait  4:5    → container is 375 × 469px (max Instagram allows)
     // CSS aspect-ratio on a 100%-width container produces exactly these heights.
-    const IGFeed = ({ ad }) => {
+    const IGFeed = ({ ad, brand = DEFAULT_BRAND }) => {
       const [activeSlide, setActiveSlide] = useState(0);
 
       const isCarousel = ad.adType === "carousel" && (ad.carouselCards || []).length > 0;
@@ -179,10 +182,10 @@
               {/* Post Header */}
               <div style={{ padding: "9px 14px", display: "flex", alignItems: "center", gap: 10 }}>
                 <div style={{ width: 38, height: 38, borderRadius: "50%", background: "linear-gradient(135deg, #f58529, #dd2a7b, #8134af)", padding: 2.5, flexShrink: 0 }}>
-                  <div style={{ width: "100%", height: "100%", borderRadius: "50%", background: "#fff", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 12, fontWeight: 700, color: "#333" }}>RG</div>
+                  <div style={{ width: "100%", height: "100%", borderRadius: "50%", background: "#fff", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 12, fontWeight: 700, color: "#333" }}>{brand.initials}</div>
                 </div>
                 <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ fontSize: 13.5, fontWeight: 700, color: "#000", lineHeight: 1.25 }}>rapidgrade</div>
+                  <div style={{ fontSize: 13.5, fontWeight: 700, color: "#000", lineHeight: 1.25 }}>{brand.name}</div>
                   <div style={{ fontSize: 12, color: "#8e8e8e", lineHeight: 1.25 }}>Ad</div>
                 </div>
                 <button style={{ background: "#efefef", border: "none", borderRadius: 10, padding: "7px 16px", fontSize: 14, fontWeight: 600, color: "#000", cursor: "pointer", flexShrink: 0 }}>Follow</button>
@@ -269,7 +272,7 @@
               {ad.primaryText && (
                 <div style={{ padding: "0 14px 6px", fontSize: 13.5, color: "#000", lineHeight: 1.5 }}>
                   <span style={{ display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden" }}>
-                    <span style={{ fontWeight: 700 }}>rapidgrade </span>
+                    <span style={{ fontWeight: 700 }}>{brand.name} </span>
                     {ad.primaryText}
                   </span>
                   <span style={{ color: "#8e8e8e", cursor: "pointer", fontSize: 13.5 }}>more</span>
@@ -312,7 +315,7 @@
     // • CTA: centered white pill (~44px tall, auto-width, 22px radius), ~90px from bottom
     // • Header: avatar 34px · username · "Sponsored" · mute icon · ✕
     // • Swipe hint: subtle upward chevron at very bottom center
-    const IGStories = ({ ad }) => (
+    const IGStories = ({ ad, brand = DEFAULT_BRAND }) => (
       <div style={{ width: "100%", background: "#000", position: "relative", fontFamily: '-apple-system,sans-serif', overflow: "hidden", aspectRatio: "9/16" }}>
 
         {/* Background creative */}
@@ -341,11 +344,11 @@
         <div style={{ position: "absolute", top: 18, left: 12, right: 12, display: "flex", alignItems: "center", gap: 8, zIndex: 3 }}>
           {/* Gradient avatar ring */}
           <div style={{ width: 34, height: 34, borderRadius: "50%", background: "linear-gradient(135deg, #f58529, #dd2a7b, #8134af)", padding: 2, flexShrink: 0 }}>
-            <div style={{ width: "100%", height: "100%", borderRadius: "50%", background: "#000", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 10, fontWeight: 700, color: "#fff" }}>RG</div>
+            <div style={{ width: "100%", height: "100%", borderRadius: "50%", background: "#000", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 10, fontWeight: 700, color: "#fff" }}>{brand.initials}</div>
           </div>
           {/* Username + Sponsored */}
           <div style={{ flex: 1, minWidth: 0 }}>
-            <div style={{ color: "#fff", fontSize: 13, fontWeight: 600, lineHeight: 1.25 }}>rapidgrade</div>
+            <div style={{ color: "#fff", fontSize: 13, fontWeight: 600, lineHeight: 1.25 }}>{brand.name}</div>
             <div style={{ color: "rgba(255,255,255,0.72)", fontSize: 11, lineHeight: 1.25 }}>Sponsored</div>
           </div>
           {/* Mute icon (speaker with X) */}
@@ -382,7 +385,7 @@
     // Specs (2026): strictly 9:16 · top safe zone 14% · bottom safe zone 35%
     // right safe zone ~120px (action rail) · no headline field shown
     // CTA: solid white pill at bottom · action rail: like→comment→share→save
-    const IGReels = ({ ad }) => (
+    const IGReels = ({ ad, brand = DEFAULT_BRAND }) => (
       <div style={{ width: "100%", background: "#000", position: "relative", fontFamily: '-apple-system,sans-serif', overflow: "hidden", aspectRatio: "9/16" }}>
 
         {/* Creative */}
@@ -421,7 +424,7 @@
           {/* Avatar + blue follow + */}
           <div style={{ position: "relative", marginBottom: 4 }}>
             <div style={{ width: 42, height: 42, borderRadius: "50%", background: "linear-gradient(135deg, #f58529, #dd2a7b, #8134af)", padding: 2.5 }}>
-              <div style={{ width: "100%", height: "100%", borderRadius: "50%", background: "#000", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 10, fontWeight: 700, color: "#fff" }}>RG</div>
+              <div style={{ width: "100%", height: "100%", borderRadius: "50%", background: "#000", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 10, fontWeight: 700, color: "#fff" }}>{brand.initials}</div>
             </div>
             <div style={{ position: "absolute", bottom: -7, left: "50%", transform: "translateX(-50%)", width: 17, height: 17, borderRadius: "50%", background: "#3897f0", border: "1.5px solid #000", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 12, color: "#fff", fontWeight: 400, lineHeight: 1 }}>+</div>
           </div>
@@ -471,7 +474,7 @@
           {/* Audio track */}
           <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 8 }}>
             <svg viewBox="0 0 24 24" fill="#fff" style={{ width: 13, height: 13, flexShrink: 0 }}><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>
-            <span style={{ color: "rgba(255,255,255,0.8)", fontSize: 12, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>Original audio · rapidgrade</span>
+            <span style={{ color: "rgba(255,255,255,0.8)", fontSize: 12, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>Original audio · {brand.name}</span>
           </div>
 
           {/* Caption — 72 chars then truncated (Meta spec) */}
@@ -484,9 +487,9 @@
           {/* Username row: avatar · rapidgrade · • Sponsored · Follow */}
           <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
             <div style={{ width: 30, height: 30, borderRadius: "50%", background: "linear-gradient(135deg, #f58529, #dd2a7b, #8134af)", padding: 2, flexShrink: 0 }}>
-              <div style={{ width: "100%", height: "100%", borderRadius: "50%", background: "#000", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 9, fontWeight: 700, color: "#fff" }}>RG</div>
+              <div style={{ width: "100%", height: "100%", borderRadius: "50%", background: "#000", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 9, fontWeight: 700, color: "#fff" }}>{brand.initials}</div>
             </div>
-            <span style={{ color: "#fff", fontSize: 14, fontWeight: 700 }}>rapidgrade</span>
+            <span style={{ color: "#fff", fontSize: 14, fontWeight: 700 }}>{brand.name}</span>
             <span style={{ color: "rgba(255,255,255,0.65)", fontSize: 12 }}>· Sponsored</span>
             <button style={{ background: "transparent", border: "1px solid rgba(255,255,255,0.65)", borderRadius: 6, padding: "3px 10px", fontSize: 12, color: "#fff", fontWeight: 600, cursor: "pointer" }}>Follow</button>
           </div>
@@ -495,12 +498,12 @@
     );
 
     // ─── FACEBOOK MOBILE ────────────────────────────────────────────────────
-    const FBMobile = ({ ad }) => (
+    const FBMobile = ({ ad, brand = DEFAULT_BRAND }) => (
       <div style={{ fontFamily: '"Helvetica Neue",Arial,sans-serif', background: "#fff", width: "100%", boxShadow: "0 1px 3px rgba(0,0,0,0.12)" }}>
         <div style={{ padding: "12px 16px", display: "flex", alignItems: "center", gap: 12 }}>
-          <div style={{ width: 40, height: 40, borderRadius: "50%", background: "#1877f2", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 16, fontWeight: 700, color: "#fff", flexShrink: 0 }}>R</div>
+          <div style={{ width: 40, height: 40, borderRadius: "50%", background: "#1877f2", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 16, fontWeight: 700, color: "#fff", flexShrink: 0 }}>{brand.initials.charAt(0)}</div>
           <div style={{ flex: 1 }}>
-            <div style={{ fontSize: 15, fontWeight: 600, color: "#000" }}>RapidGrade</div>
+            <div style={{ fontSize: 15, fontWeight: 600, color: "#000" }}>{brand.displayName}</div>
             <div style={{ fontSize: 13, color: "#65676b" }}>Sponsored · 🌐</div>
           </div>
           <span style={{ color: "#65676b", fontSize: 18, cursor: "pointer" }}>⋯</span>
@@ -539,7 +542,7 @@
     );
 
     // ─── FACEBOOK DESKTOP ───────────────────────────────────────────────────
-    const FBDesktop = ({ ad }) => {
+    const FBDesktop = ({ ad, brand = DEFAULT_BRAND }) => {
       const Post = ({ author, subtext, image, content }) => (
         <div style={{ background: "#fff", marginBottom: 16, borderRadius: 8, overflow: "hidden", border: "1px solid #e5e7eb" }}>
           <div style={{ padding: "12px 16px", display: "flex", alignItems: "center", gap: 12, borderBottom: "1px solid #e5e7eb" }}>
@@ -597,9 +600,9 @@
               <Post author="Sarah Johnson" subtext="Just now" content="Just finished the best hiking trip! 🏔️" image="📸" />
               <div style={{ background: "#fff", marginBottom: 16, borderRadius: 8, overflow: "hidden", border: "1px solid #e5e7eb" }}>
                 <div style={{ padding: "12px 16px", display: "flex", alignItems: "center", gap: 12, borderBottom: "1px solid #e5e7eb" }}>
-                  <div style={{ width: 40, height: 40, borderRadius: "50%", background: "#1877f2", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 16, fontWeight: 700, color: "#fff", flexShrink: 0 }}>R</div>
+                  <div style={{ width: 40, height: 40, borderRadius: "50%", background: "#1877f2", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 16, fontWeight: 700, color: "#fff", flexShrink: 0 }}>{brand.initials.charAt(0)}</div>
                   <div style={{ flex: 1 }}>
-                    <div style={{ fontSize: 14, fontWeight: 600, color: "#000" }}>RapidGrade</div>
+                    <div style={{ fontSize: 14, fontWeight: 600, color: "#000" }}>{brand.displayName}</div>
                     <div style={{ fontSize: 12, color: "#65676b" }}>Sponsored · 🌐</div>
                   </div>
                   <span style={{ color: "#65676b", fontSize: 18, cursor: "pointer" }}>⋯</span>
@@ -711,13 +714,20 @@
       const [carouselEditIdx, setCarouselEditIdx] = useState(0);
       const [isMobile, setIsMobile] = useState(() => window.innerWidth < 768);
       const [mobileTab, setMobileTab] = useState("edit");
+      const [brand, setBrand] = useState({ ...DEFAULT_BRAND });
+      const [exportingPNG, setExportingPNG] = useState(false);
       const fileRef = useRef();
+      const previewRef = useRef();
 
       useEffect(() => {
         (async () => {
           try {
             const r = await storage.get("rg-ads-index");
             if (r) setSaved(JSON.parse(r.value));
+          } catch(e) {}
+          try {
+            const b = await storage.get("rg-brand-settings");
+            if (b) setBrand({ ...DEFAULT_BRAND, ...JSON.parse(b.value) });
           } catch(e) {}
         })();
       }, []);
@@ -729,6 +739,33 @@
       }, []);
 
       const upd = useCallback((k, v) => setAd(p => ({ ...p, [k]: v })), []);
+
+      const updBrand = useCallback(async (k, v) => {
+        setBrand(p => {
+          const next = { ...p, [k]: v };
+          storage.set("rg-brand-settings", JSON.stringify(next)).catch(() => {});
+          return next;
+        });
+      }, []);
+
+      const doExportPNG = useCallback(async () => {
+        if (!previewRef.current || !window.html2canvas) return;
+        setExportingPNG(true);
+        try {
+          const canvas = await window.html2canvas(previewRef.current, {
+            scale: 2,
+            useCORS: true,
+            backgroundColor: null,
+            logging: false,
+          });
+          const link = document.createElement("a");
+          const name = (ad.name || "ad").replace(/[^a-z0-9]/gi, "-").toLowerCase();
+          link.download = `${name}-${placement}-${new Date().toISOString().split("T")[0]}.png`;
+          link.href = canvas.toDataURL("image/png");
+          link.click();
+        } catch(e) { console.error("PNG export failed:", e); }
+        setExportingPNG(false);
+      }, [ad.name, placement]);
 
       const handleFile = useCallback(async (file) => {
         if (!file?.type.startsWith("image/")) return;
@@ -834,7 +871,7 @@
       };
 
       const preview = () => {
-        const p = { ad };
+        const p = { ad, brand };
         let content;
         if (placement === "ig-stories") content = <IGStories {...p} />;
         else if (placement === "ig-reels") content = <IGReels {...p} />;
@@ -888,9 +925,19 @@
                     ↓ Backup
                   </button>
                 )}
+                {!isMobile && (
+                  <button onClick={doExportPNG} disabled={exportingPNG} style={{ background: exportingPNG ? "#e0e0e0" : "#f0f0f0", color: exportingPNG ? "#aaa" : "#1d1d1f", border: "1px solid #d0d0d0", borderRadius: 8, padding: "8px 16px", fontSize: 14, fontWeight: 600, cursor: exportingPNG ? "default" : "pointer", transition: "all .2s" }}>
+                    {exportingPNG ? "Exporting…" : "📷 Export PNG"}
+                  </button>
+                )}
                 {isMobile && (
                   <button onClick={() => { setAd({ ...EMPTY }); setCarouselEditIdx(0); setMobileTab("edit"); }} style={{ background: "transparent", color: "#1d1d1f", border: "none", borderRadius: 8, padding: "6px 10px", fontSize: 13, fontWeight: 600, cursor: "pointer" }}>
                     + New
+                  </button>
+                )}
+                {isMobile && mobileTab === "preview" && (
+                  <button onClick={doExportPNG} disabled={exportingPNG} style={{ background: exportingPNG ? "#e0e0e0" : "#f0f0f0", color: exportingPNG ? "#aaa" : "#1d1d1f", border: "1px solid #d0d0d0", borderRadius: 8, padding: "6px 10px", fontSize: 12, fontWeight: 600, cursor: exportingPNG ? "default" : "pointer" }}>
+                    {exportingPNG ? "…" : "📷"}
                   </button>
                 )}
                 <button onClick={doSave} style={{ background: "#f59e0b", color: "#fff", border: "none", borderRadius: 8, padding: isMobile ? "7px 14px" : "8px 20px", fontSize: isMobile ? 13 : 14, fontWeight: 700, cursor: "pointer", transition: "all .2s" }}>
@@ -1008,6 +1055,25 @@
               <div>
                 <label style={L}>Ad Name</label>
                 <input value={ad.name} onChange={e => upd("name", e.target.value)} placeholder="Summer Collection" style={I} />
+              </div>
+
+              {/* ── Brand Profile ── */}
+              <div style={{ border: "1px solid #e8e8e8", borderRadius: 10, padding: "14px 14px 10px", background: "#fafafa" }}>
+                <div style={{ fontSize: 11, fontWeight: 700, color: "#888", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 12 }}>Brand Profile</div>
+                <div style={{ display: "flex", gap: 10, marginBottom: 10 }}>
+                  <div style={{ flex: 1 }}>
+                    <label style={{ ...L, color: "#888" }}>Handle</label>
+                    <input value={brand.name} onChange={e => updBrand("name", e.target.value)} placeholder="rapidgrade" style={{ ...I, fontSize: 13, padding: "9px 12px" }} />
+                  </div>
+                  <div style={{ width: 70 }}>
+                    <label style={{ ...L, color: "#888" }}>Initials</label>
+                    <input value={brand.initials} onChange={e => updBrand("initials", e.target.value.toUpperCase().slice(0, 3))} placeholder="RG" style={{ ...I, fontSize: 13, padding: "9px 12px", textAlign: "center", textTransform: "uppercase" }} />
+                  </div>
+                </div>
+                <div>
+                  <label style={{ ...L, color: "#888" }}>Display Name (Facebook)</label>
+                  <input value={brand.displayName} onChange={e => updBrand("displayName", e.target.value)} placeholder="RapidGrade" style={{ ...I, fontSize: 13, padding: "9px 12px" }} />
+                </div>
               </div>
 
               {/* ── Creative ── */}
@@ -1163,7 +1229,9 @@
             {/* ── PREVIEW ── */}
             {(!isMobile || mobileTab === "preview") && (
               <div style={{ flex: 1, overflow: "auto", display: "flex", flexDirection: "column", alignItems: isMobile ? "stretch" : "center", justifyContent: isMobile ? "flex-start" : "center", padding: isMobile ? "0" : "32px 20px 40px", background: isMobile ? "#fff" : "linear-gradient(135deg, #f5f5f7 0%, #ffffff 100%)" }}>
-                {preview()}
+                <div ref={previewRef} style={{ display: "inline-flex" }}>
+                  {preview()}
+                </div>
               </div>
             )}
           </div>
