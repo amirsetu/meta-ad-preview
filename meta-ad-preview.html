@@ -919,6 +919,11 @@
         });
       }, []);
 
+      const startNewAd = useCallback(() => {
+        setAd({ ...EMPTY, campaignId: activeCampaignId });
+        setCarouselEditIdx(0);
+      }, [activeCampaignId]);
+
       const doExportPNG = useCallback(async () => {
         if (!previewRef.current || !window.html2canvas) return;
         setExportingPNG(true);
@@ -1046,6 +1051,23 @@
           const nl = saved.filter(a => a.id !== id);
           await storage.set("rg-ads-index", JSON.stringify(nl));
           setSaved(nl);
+        } catch(e) {}
+      };
+
+      const moveSavedAd = async (id, campaignId) => {
+        try {
+          const r = await storage.get(`rg-ad:${id}`);
+          if (r) {
+            const data = { ...JSON.parse(r.value), campaignId };
+            await storage.set(`rg-ad:${id}`, JSON.stringify(data));
+          }
+          const next = saved.map(item => item.id === id ? { ...item, campaignId } : item);
+          await storage.set("rg-ads-index", JSON.stringify(next));
+          setSaved(next);
+          const nextShares = shareRecords.map(record => record.adId === id ? { ...record, campaignId } : record);
+          await storage.set("rg-share-records", JSON.stringify(nextShares));
+          setShareRecords(nextShares);
+          if (ad.id === id) setAd(p => ({ ...p, campaignId }));
         } catch(e) {}
       };
 
@@ -1479,8 +1501,8 @@ Return ONLY valid JSON: {"${type}": "the new variant here"}`;
                   </button>
                 )}
                 {!isMobile && (
-                  <button onClick={() => { setAd({ ...EMPTY, campaignId: activeCampaignId }); setCarouselEditIdx(0); }} style={{ background: "transparent", color: theme.text, border: "none", borderRadius: 8, padding: "8px 16px", fontSize: 14, fontWeight: 600, cursor: "pointer" }}>
-                    + New
+                  <button onClick={startNewAd} title={activeCampaign ? `Create new ad in ${activeCampaign.name}` : "Create new ad"} style={{ background: "transparent", color: theme.text, border: "none", borderRadius: 8, padding: "8px 16px", fontSize: 14, fontWeight: 600, cursor: "pointer" }}>
+                    + New{activeCampaign ? " in Folder" : ""}
                   </button>
                 )}
                 {!isMobile && saved.length > 0 && (
@@ -1502,7 +1524,7 @@ Return ONLY valid JSON: {"${type}": "the new variant here"}`;
                   {darkMode ? "Light" : "Dark"}
                 </button>
                 {isMobile && (
-                  <button onClick={() => { setAd({ ...EMPTY, campaignId: activeCampaignId }); setCarouselEditIdx(0); setMobileTab("edit"); }} style={{ background: "transparent", color: theme.text, border: "none", borderRadius: 8, padding: "6px 10px", fontSize: 13, fontWeight: 600, cursor: "pointer" }}>
+                  <button onClick={() => { startNewAd(); setMobileTab("edit"); }} title={activeCampaign ? `Create new ad in ${activeCampaign.name}` : "Create new ad"} style={{ background: "transparent", color: theme.text, border: "none", borderRadius: 8, padding: "6px 10px", fontSize: 13, fontWeight: 600, cursor: "pointer" }}>
                     + New
                   </button>
                 )}
@@ -1572,7 +1594,7 @@ Return ONLY valid JSON: {"${type}": "the new variant here"}`;
                     ))}
                   </div>
                   <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
-                    <input value={newCampaignName} onChange={e => setNewCampaignName(e.target.value)} placeholder="New campaign folder" style={{ ...I, fontSize: 13, padding: "9px 10px" }} />
+                    <input value={newCampaignName} onChange={e => setNewCampaignName(e.target.value)} onKeyDown={e => { if (e.key === "Enter") createCampaign(); }} placeholder="New campaign folder" style={{ ...I, fontSize: 13, padding: "9px 10px" }} />
                     <button onClick={createCampaign} style={{ background: "#f59e0b", color: "#fff", border: "none", borderRadius: 8, padding: "0 12px", fontSize: 12, fontWeight: 800, cursor: "pointer" }}>Add</button>
                   </div>
                 </div>
@@ -1615,6 +1637,15 @@ Return ONLY valid JSON: {"${type}": "the new variant here"}`;
                         <div style={{ fontSize: 14, fontWeight: 600, color: theme.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{s.name || "Untitled"}</div>
                         <div style={{ fontSize: 12, color: theme.muted, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", marginTop: 2 }}>{s.headline || "No headline"}</div>
                         <div style={{ fontSize: 11, color: theme.faint, marginTop: 4 }}>{new Date(s.savedAt).toLocaleDateString()}</div>
+                        <select
+                          value={s.campaignId || ""}
+                          onClick={e => e.stopPropagation()}
+                          onChange={e => { e.stopPropagation(); moveSavedAd(s.id, e.target.value); }}
+                          style={{ width: "100%", marginTop: 8, background: theme.field, color: theme.text, border: `1px solid ${theme.border}`, borderRadius: 7, padding: "7px 8px", fontSize: 12, fontFamily: "inherit", outline: "none" }}
+                        >
+                          <option value="">Move to: Unassigned</option>
+                          {campaigns.map(c => <option key={c.id} value={c.id}>Move to: {c.name}</option>)}
+                        </select>
                       </div>
                       <button onClick={e => doDelete(s.id, e)} style={{ background: "none", border: "none", color: "#bbb", cursor: "pointer", fontSize: 18, padding: "4px", flexShrink: 0 }}>✕</button>
                     </div>
@@ -1638,7 +1669,7 @@ Return ONLY valid JSON: {"${type}": "the new variant here"}`;
                     ))}
                   </div>
                   <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
-                    <input value={newCampaignName} onChange={e => setNewCampaignName(e.target.value)} placeholder="New folder" style={{ ...I, fontSize: 13, padding: "9px 10px" }} />
+                    <input value={newCampaignName} onChange={e => setNewCampaignName(e.target.value)} onKeyDown={e => { if (e.key === "Enter") createCampaign(); }} placeholder="New folder" style={{ ...I, fontSize: 13, padding: "9px 10px" }} />
                     <button onClick={createCampaign} style={{ background: "#f59e0b", color: "#fff", border: "none", borderRadius: 8, padding: "0 12px", fontSize: 12, fontWeight: 800, cursor: "pointer" }}>Add</button>
                   </div>
                 </div>
@@ -1681,6 +1712,15 @@ Return ONLY valid JSON: {"${type}": "the new variant here"}`;
                         <div style={{ fontSize: 13, fontWeight: 600, color: theme.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{s.name || "Untitled"}</div>
                         <div style={{ fontSize: 12, color: theme.muted, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", marginTop: 2 }}>{s.headline || "No headline"}</div>
                         <div style={{ fontSize: 11, color: theme.faint, marginTop: 4 }}>{new Date(s.savedAt).toLocaleDateString()}</div>
+                        <select
+                          value={s.campaignId || ""}
+                          onClick={e => e.stopPropagation()}
+                          onChange={e => { e.stopPropagation(); moveSavedAd(s.id, e.target.value); }}
+                          style={{ width: "100%", marginTop: 8, background: theme.field, color: theme.text, border: `1px solid ${theme.border}`, borderRadius: 7, padding: "7px 8px", fontSize: 12, fontFamily: "inherit", outline: "none" }}
+                        >
+                          <option value="">Move to: Unassigned</option>
+                          {campaigns.map(c => <option key={c.id} value={c.id}>Move to: {c.name}</option>)}
+                        </select>
                       </div>
                       <button onClick={(e) => doDelete(s.id, e)} style={{ background: "none", border: "none", color: "#bbb", cursor: "pointer", fontSize: 16, padding: 0, flexShrink: 0 }}>✕</button>
                     </div>
