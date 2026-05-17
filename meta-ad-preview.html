@@ -88,6 +88,18 @@
       return rows[0].data;
     };
 
+    const updateShareReview = async (id, review) => {
+      const data = await fetchShare(id);
+      const nextData = { ...data, review };
+      const res = await fetch(`${SUPA_URL}/rest/v1/ad_shares?id=eq.${encodeURIComponent(id)}`, {
+        method: "PATCH",
+        headers: { ...supaHdr, "Prefer": "return=minimal" },
+        body: JSON.stringify({ data: nextData }),
+      });
+      if (!res.ok) throw new Error(`${res.status}`);
+      return nextData;
+    };
+
     const callAIProxy = async ({ prompt, maxTokens }) => {
       if (!AI_PROXY_URL) throw new Error("AI proxy is not configured.");
       const res = await fetch(AI_PROXY_URL, {
@@ -759,6 +771,11 @@
       const [ad, setAd]                  = useState({ ...EMPTY });
       const [placement, setPlacement]    = useState("ig-feed");
       const [saved, setSaved]            = useState([]);
+      const [campaigns, setCampaigns] = useState([]);
+      const [activeCampaignId, setActiveCampaignId] = useState("");
+      const [newCampaignName, setNewCampaignName] = useState("");
+      const [shareRecords, setShareRecords] = useState([]);
+      const [reviewRefreshing, setReviewRefreshing] = useState(false);
       const [showLib, setShowLib]        = useState(false);
       const [dragging, setDragging]      = useState(false);
       const [saveMsg, setSaveMsg]        = useState("");
@@ -770,6 +787,7 @@
       const [brand, setBrand] = useState({ ...DEFAULT_BRAND });
       const [exportingPNG, setExportingPNG] = useState(false);
       const [shareMsg, setShareMsg]        = useState("");
+      const [shareId] = useState(() => new URLSearchParams(window.location.search).get("share") || "");
       const [isSharedView] = useState(() => !!new URLSearchParams(window.location.search).get("share"));
       const [aiLoading, setAiLoading]       = useState(false);
       const [aiError, setAiError]           = useState("");
@@ -790,6 +808,7 @@
       const [darkMode, setDarkMode] = useState(() => localStorage.getItem("rg-theme") === "dark");
       const [reviewNote, setReviewNote] = useState("");
       const [reviewMsg, setReviewMsg] = useState("");
+      const [sharedReview, setSharedReview] = useState(null);
       const fileRef = useRef();
       const previewRef = useRef();
       const voiceFileRef = useRef();
@@ -834,6 +853,14 @@
             if (r) setSaved(JSON.parse(r.value));
           } catch(e) {}
           try {
+            const c = await storage.get("rg-campaigns");
+            if (c) setCampaigns(JSON.parse(c.value));
+          } catch(e) {}
+          try {
+            const s = await storage.get("rg-share-records");
+            if (s) setShareRecords(JSON.parse(s.value));
+          } catch(e) {}
+          try {
             const b = await storage.get("rg-brand-settings");
             if (b) setBrand({ ...DEFAULT_BRAND, ...JSON.parse(b.value) });
           } catch(e) {}
@@ -854,17 +881,20 @@
             if (h) setAiHistory(JSON.parse(h.value));
           } catch(e) {}
           // Load shared ad from URL ?share=<id>
-          const shareId = new URLSearchParams(window.location.search).get("share");
           if (shareId) {
             try {
-              const { ad: sharedAd, brand: sharedBrand, view: sharedView } = await fetchShare(shareId);
+              const { ad: sharedAd, brand: sharedBrand, view: sharedView, review } = await fetchShare(shareId);
               if (sharedAd)    setAd(sharedAd);
               if (sharedBrand) setBrand(b => ({ ...b, ...sharedBrand }));
               if (sharedView?.placement && PLACEMENTS.some(p => p.id === sharedView.placement)) setPlacement(sharedView.placement);
+              if (review) {
+                setSharedReview(review);
+                setReviewNote(review.note || "");
+              }
             } catch(e) {}
           }
         })();
-      }, []);
+      }, [shareId]);
 
       useEffect(() => {
         const check = () => {
@@ -913,6 +943,19 @@
         try {
           const id  = await pushShare(ad, brand, { placement });
           const url = `${window.location.href.split("?")[0]}?share=${id}`;
+          const record = {
+            id,
+            adId: ad.id || null,
+            adName: ad.name || "Untitled",
+            campaignId: ad.campaignId || "",
+            placement,
+            url,
+            createdAt: new Date().toISOString(),
+            review: null,
+          };
+          const nextRecords = [record, ...shareRecords.filter(r => r.id !== id)].slice(0, 100);
+          await storage.set("rg-share-records", JSON.stringify(nextRecords));
+          setShareRecords(nextRecords);
           await navigator.clipboard.writeText(url);
           setShareMsg("Link copied! ✓");
         } catch(e) { setShareMsg("Error"); }
@@ -979,7 +1022,7 @@
         try {
           await storage.set(`rg-ad:${id}`, JSON.stringify(data));
           let idx = [...saved];
-          const entry = { id, name: ad.name || "Untitled", headline: ad.headline, hasImage: hasCreativeImage(ad), savedAt: data.savedAt };
+          const entry = { id, name: ad.name || "Untitled", headline: ad.headline, hasImage: hasCreativeImage(ad), savedAt: data.savedAt, campaignId: ad.campaignId || "" };
           const pos = idx.findIndex(a => a.id === id);
           if (pos >= 0) idx[pos] = entry; else idx.unshift(entry);
           await storage.set("rg-ads-index", JSON.stringify(idx));
@@ -1004,6 +1047,34 @@
           await storage.set("rg-ads-index", JSON.stringify(nl));
           setSaved(nl);
         } catch(e) {}
+      };
+
+      const createCampaign = async () => {
+        const name = newCampaignName.trim();
+        if (!name) return;
+        const entry = { id: `camp_${Date.now()}`, name, createdAt: new Date().toISOString() };
+        const next = [...campaigns, entry];
+        await storage.set("rg-campaigns", JSON.stringify(next));
+        setCampaigns(next);
+        setActiveCampaignId(entry.id);
+        setAd(p => ({ ...p, campaignId: entry.id }));
+        setNewCampaignName("");
+      };
+
+      const refreshReviews = async () => {
+        if (!shareRecords.length) return;
+        setReviewRefreshing(true);
+        const next = await Promise.all(shareRecords.map(async record => {
+          try {
+            const data = await fetchShare(record.id);
+            return { ...record, review: data.review || null, adName: data.ad?.name || record.adName, campaignId: record.campaignId || data.ad?.campaignId || "" };
+          } catch(e) {
+            return record;
+          }
+        }));
+        await storage.set("rg-share-records", JSON.stringify(next));
+        setShareRecords(next);
+        setReviewRefreshing(false);
       };
 
       const generateCopy = async () => {
@@ -1149,10 +1220,22 @@ Return ONLY valid JSON: {"${type}": "the new variant here"}`;
           ? brief
           : `${status}\n\n${brief}${note ? `\n\nNotes:\n${note}` : ""}`;
         try {
-          await navigator.clipboard.writeText(text);
-          setReviewMsg(kind === "approved" ? "Approval copied" : kind === "changes" ? "Change note copied" : "Brief copied");
+          if (kind !== "brief" && shareId) {
+            const review = {
+              status,
+              note,
+              submittedAt: new Date().toISOString(),
+              placement,
+            };
+            await updateShareReview(shareId, review);
+            setSharedReview(review);
+          }
+          try {
+            await navigator.clipboard.writeText(text);
+          } catch(e) {}
+          setReviewMsg(kind === "approved" ? "Approval saved" : kind === "changes" ? "Changes saved" : "Brief copied");
         } catch(e) {
-          setReviewMsg("Could not copy");
+          setReviewMsg("Could not save");
         }
         setTimeout(() => setReviewMsg(""), 2500);
       };
@@ -1275,6 +1358,9 @@ Return ONLY valid JSON: {"${type}": "the new variant here"}`;
       const carouselCards = ad.carouselCards || [];
       const editCard    = carouselCards[carouselEditIdx] || {};
       const headlineVal = isCarousel ? (editCard.headline || "") : ad.headline;
+      const visibleSaved = activeCampaignId ? saved.filter(s => s.campaignId === activeCampaignId) : saved;
+      const visibleShares = activeCampaignId ? shareRecords.filter(r => r.campaignId === activeCampaignId) : shareRecords;
+      const activeCampaign = campaigns.find(c => c.id === activeCampaignId);
 
       // ── SHARED / CLIENT VIEW ──────────────────────────────────────────────
       if (isSharedView) {
@@ -1329,8 +1415,15 @@ Return ONLY valid JSON: {"${type}": "the new variant here"}`;
                     <div style={{ fontSize: 11, fontWeight: 800, color: "#888", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 5 }}>Client Review</div>
                     <div style={{ fontSize: 19, fontWeight: 800, color: "#1d1d1f", lineHeight: 1.2 }}>{ad.name || "Ad Preview"}</div>
                   </div>
-                  <div style={{ background: "#f0fdf4", color: "#15803d", border: "1px solid #bbf7d0", borderRadius: 999, padding: "5px 10px", fontSize: 12, fontWeight: 800, whiteSpace: "nowrap" }}>Ready</div>
+                  <div style={{ background: sharedReview?.status === "Needs changes" ? "#fff7ed" : "#f0fdf4", color: sharedReview?.status === "Needs changes" ? "#c2410c" : "#15803d", border: `1px solid ${sharedReview?.status === "Needs changes" ? "#fed7aa" : "#bbf7d0"}`, borderRadius: 999, padding: "5px 10px", fontSize: 12, fontWeight: 800, whiteSpace: "nowrap" }}>{sharedReview?.status || "Ready"}</div>
                 </div>
+
+                {sharedReview && (
+                  <div style={{ background: sharedReview.status === "Needs changes" ? "#fff7ed" : "#f0fdf4", border: `1px solid ${sharedReview.status === "Needs changes" ? "#fed7aa" : "#bbf7d0"}`, borderRadius: 8, padding: "10px 12px", marginBottom: 14 }}>
+                    <div style={{ fontSize: 12, fontWeight: 800, color: sharedReview.status === "Needs changes" ? "#c2410c" : "#15803d", marginBottom: sharedReview.note ? 4 : 0 }}>{sharedReview.status} saved</div>
+                    {sharedReview.note && <div style={{ fontSize: 13, lineHeight: 1.45, color: "#1d1d1f" }}>{sharedReview.note}</div>}
+                  </div>
+                )}
 
                 <div style={{ display: "flex", flexDirection: "column", gap: 9, marginBottom: 16 }}>
                   {briefLines.map(line => {
@@ -1356,10 +1449,11 @@ Return ONLY valid JSON: {"${type}": "the new variant here"}`;
                   <button onClick={() => copyReviewText("approved")} style={{ background: "#16a34a", color: "#fff", border: "none", borderRadius: 8, padding: "10px 0", fontSize: 13, fontWeight: 800, cursor: "pointer" }}>Approve</button>
                   <button onClick={() => copyReviewText("changes")} style={{ background: "#1d1d1f", color: "#fff", border: "none", borderRadius: 8, padding: "10px 0", fontSize: 13, fontWeight: 800, cursor: "pointer" }}>Needs Changes</button>
                 </div>
+                {reviewMsg && <div style={{ marginTop: 8, fontSize: 12, color: reviewMsg.includes("Could") ? "#d70015" : "#15803d", fontWeight: 800 }}>{reviewMsg}</div>}
                 <button onClick={() => copyReviewText("brief")} style={{ width: "100%", marginTop: 8, background: "#f5f5f7", color: "#1d1d1f", border: "1px solid #e0e0e0", borderRadius: 8, padding: "10px 0", fontSize: 13, fontWeight: 800, cursor: "pointer" }}>
-                  {reviewMsg || "Copy Brief"}
+                  {reviewMsg === "Brief copied" ? reviewMsg : "Copy Brief"}
                 </button>
-                <div style={{ marginTop: 12, fontSize: 11, color: "#999", lineHeight: 1.45 }}>Review actions copy a message to your clipboard so you can paste it into email, chat, or a task.</div>
+                <div style={{ marginTop: 12, fontSize: 11, color: "#999", lineHeight: 1.45 }}>Review actions save the response to this shared link and copy a message for email, chat, or a task.</div>
               </div>
             </div>
           </div>
@@ -1385,7 +1479,7 @@ Return ONLY valid JSON: {"${type}": "the new variant here"}`;
                   </button>
                 )}
                 {!isMobile && (
-                  <button onClick={() => { setAd({ ...EMPTY }); setCarouselEditIdx(0); }} style={{ background: "transparent", color: theme.text, border: "none", borderRadius: 8, padding: "8px 16px", fontSize: 14, fontWeight: 600, cursor: "pointer" }}>
+                  <button onClick={() => { setAd({ ...EMPTY, campaignId: activeCampaignId }); setCarouselEditIdx(0); }} style={{ background: "transparent", color: theme.text, border: "none", borderRadius: 8, padding: "8px 16px", fontSize: 14, fontWeight: 600, cursor: "pointer" }}>
                     + New
                   </button>
                 )}
@@ -1408,7 +1502,7 @@ Return ONLY valid JSON: {"${type}": "the new variant here"}`;
                   {darkMode ? "Light" : "Dark"}
                 </button>
                 {isMobile && (
-                  <button onClick={() => { setAd({ ...EMPTY }); setCarouselEditIdx(0); setMobileTab("edit"); }} style={{ background: "transparent", color: theme.text, border: "none", borderRadius: 8, padding: "6px 10px", fontSize: 13, fontWeight: 600, cursor: "pointer" }}>
+                  <button onClick={() => { setAd({ ...EMPTY, campaignId: activeCampaignId }); setCarouselEditIdx(0); setMobileTab("edit"); }} style={{ background: "transparent", color: theme.text, border: "none", borderRadius: 8, padding: "6px 10px", fontSize: 13, fontWeight: 600, cursor: "pointer" }}>
                     + New
                   </button>
                 )}
@@ -1470,12 +1564,49 @@ Return ONLY valid JSON: {"${type}": "the new variant here"}`;
             {isMobile && mobileTab === "library" && (
               <div style={{ flex: 1, overflowY: "auto", background: theme.surface, padding: "20px" }}>
                 <div style={{ marginBottom: 16 }}>
+                  <div style={{ fontSize: 12, fontWeight: 700, color: theme.text, textTransform: "uppercase" }}>Campaigns</div>
+                  <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 10 }}>
+                    <button onClick={() => setActiveCampaignId("")} style={{ background: !activeCampaignId ? theme.active : theme.segment, color: theme.text, border: `1px solid ${theme.border}`, borderRadius: 20, padding: "6px 11px", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>All</button>
+                    {campaigns.map(c => (
+                      <button key={c.id} onClick={() => setActiveCampaignId(c.id)} style={{ background: activeCampaignId === c.id ? "#f59e0b" : theme.segment, color: activeCampaignId === c.id ? "#fff" : theme.text, border: `1px solid ${activeCampaignId === c.id ? "#f59e0b" : theme.border}`, borderRadius: 20, padding: "6px 11px", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>{c.name}</button>
+                    ))}
+                  </div>
+                  <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
+                    <input value={newCampaignName} onChange={e => setNewCampaignName(e.target.value)} placeholder="New campaign folder" style={{ ...I, fontSize: 13, padding: "9px 10px" }} />
+                    <button onClick={createCampaign} style={{ background: "#f59e0b", color: "#fff", border: "none", borderRadius: 8, padding: "0 12px", fontSize: 12, fontWeight: 800, cursor: "pointer" }}>Add</button>
+                  </div>
+                </div>
+
+                <div style={{ marginBottom: 18 }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+                    <div>
+                      <div style={{ fontSize: 12, fontWeight: 700, color: theme.text, textTransform: "uppercase" }}>Review Inbox</div>
+                      <div style={{ fontSize: 13, color: theme.muted, marginTop: 3 }}>{visibleShares.length} shared link{visibleShares.length !== 1 ? "s" : ""}</div>
+                    </div>
+                    <button onClick={refreshReviews} disabled={reviewRefreshing || !shareRecords.length} style={{ background: theme.segment, color: theme.text, border: `1px solid ${theme.border}`, borderRadius: 8, padding: "7px 10px", fontSize: 12, fontWeight: 700, cursor: reviewRefreshing ? "default" : "pointer" }}>{reviewRefreshing ? "Checking..." : "Refresh"}</button>
+                  </div>
+                  <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                    {visibleShares.length === 0 && <div style={{ color: theme.faint, fontSize: 13, padding: "10px 0" }}>Share an ad to start tracking client responses.</div>}
+                    {visibleShares.map(r => (
+                      <div key={r.id} style={{ border: `1px solid ${theme.softBorder}`, borderRadius: 10, padding: "10px 12px", background: theme.panel }}>
+                        <div style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
+                          <div style={{ fontSize: 13, fontWeight: 700, color: theme.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{r.adName || "Untitled"}</div>
+                          <div style={{ fontSize: 11, fontWeight: 800, color: r.review?.status === "Needs changes" ? "#f97316" : r.review?.status ? "#16a34a" : theme.faint, whiteSpace: "nowrap" }}>{r.review?.status || "Pending"}</div>
+                        </div>
+                        {r.review?.note && <div style={{ fontSize: 12, color: theme.muted, lineHeight: 1.4, marginTop: 6 }}>{r.review.note}</div>}
+                        <button onClick={() => navigator.clipboard.writeText(r.url)} style={{ marginTop: 8, background: "transparent", border: "none", color: "#f59e0b", fontSize: 12, fontWeight: 700, cursor: "pointer", padding: 0 }}>Copy link</button>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                <div style={{ marginBottom: 16 }}>
                   <div style={{ fontSize: 12, fontWeight: 700, color: theme.text, textTransform: "uppercase" }}>Saved Ads</div>
-                  <div style={{ fontSize: 13, color: theme.muted, marginTop: 4 }}>{saved.length} ad{saved.length !== 1 ? "s" : ""}</div>
+                  <div style={{ fontSize: 13, color: theme.muted, marginTop: 4 }}>{visibleSaved.length} ad{visibleSaved.length !== 1 ? "s" : ""}{activeCampaign ? ` in ${activeCampaign.name}` : ""}</div>
                 </div>
                 <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                  {saved.length === 0 && <div style={{ color: theme.faint, fontSize: 13, textAlign: "center", padding: "40px 0" }}>No ads saved yet.</div>}
-                  {saved.map(s => (
+                  {visibleSaved.length === 0 && <div style={{ color: theme.faint, fontSize: 13, textAlign: "center", padding: "40px 0" }}>No ads saved here yet.</div>}
+                  {visibleSaved.map(s => (
                     <div key={s.id} onClick={() => { doLoad(s.id); setMobileTab("edit"); }} style={{ background: ad.id === s.id ? theme.panel : "transparent", border: `1px solid ${ad.id === s.id ? theme.border : theme.softBorder}`, borderRadius: 10, padding: "12px", cursor: "pointer", display: "flex", gap: 12, alignItems: "flex-start" }}>
                       <div style={{ width: 44, height: 44, borderRadius: 8, background: theme.panel, flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 20 }}>
                         {s.hasImage ? "🖼" : "📋"}
@@ -1498,13 +1629,50 @@ Return ONLY valid JSON: {"${type}": "the new variant here"}`;
             {/* ── LIBRARY (desktop sidebar) ── */}
             {!isMobile && showLib && (
               <div style={{ width: 280, borderRight: `1px solid ${theme.border}`, overflowY: "auto", background: theme.surface, flexShrink: 0, padding: "20px" }}>
+                <div style={{ marginBottom: 18 }}>
+                  <div style={{ fontSize: 12, fontWeight: 700, color: theme.text, textTransform: "uppercase" }}>Campaigns</div>
+                  <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 10 }}>
+                    <button onClick={() => setActiveCampaignId("")} style={{ background: !activeCampaignId ? theme.active : theme.segment, color: theme.text, border: `1px solid ${theme.border}`, borderRadius: 20, padding: "6px 11px", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>All</button>
+                    {campaigns.map(c => (
+                      <button key={c.id} onClick={() => setActiveCampaignId(c.id)} style={{ background: activeCampaignId === c.id ? "#f59e0b" : theme.segment, color: activeCampaignId === c.id ? "#fff" : theme.text, border: `1px solid ${activeCampaignId === c.id ? "#f59e0b" : theme.border}`, borderRadius: 20, padding: "6px 11px", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>{c.name}</button>
+                    ))}
+                  </div>
+                  <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
+                    <input value={newCampaignName} onChange={e => setNewCampaignName(e.target.value)} placeholder="New folder" style={{ ...I, fontSize: 13, padding: "9px 10px" }} />
+                    <button onClick={createCampaign} style={{ background: "#f59e0b", color: "#fff", border: "none", borderRadius: 8, padding: "0 12px", fontSize: 12, fontWeight: 800, cursor: "pointer" }}>Add</button>
+                  </div>
+                </div>
+
+                <div style={{ marginBottom: 18 }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, marginBottom: 8 }}>
+                    <div>
+                      <div style={{ fontSize: 12, fontWeight: 700, color: theme.text, textTransform: "uppercase" }}>Review Inbox</div>
+                      <div style={{ fontSize: 13, color: theme.muted, marginTop: 3 }}>{visibleShares.length} shared link{visibleShares.length !== 1 ? "s" : ""}</div>
+                    </div>
+                    <button onClick={refreshReviews} disabled={reviewRefreshing || !shareRecords.length} style={{ background: theme.segment, color: theme.text, border: `1px solid ${theme.border}`, borderRadius: 8, padding: "7px 9px", fontSize: 12, fontWeight: 700, cursor: reviewRefreshing ? "default" : "pointer" }}>{reviewRefreshing ? "..." : "Refresh"}</button>
+                  </div>
+                  <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                    {visibleShares.length === 0 && <div style={{ color: theme.faint, fontSize: 13, padding: "8px 0" }}>Shared review links appear here.</div>}
+                    {visibleShares.map(r => (
+                      <div key={r.id} style={{ border: `1px solid ${theme.softBorder}`, borderRadius: 10, padding: "10px 12px", background: theme.panel }}>
+                        <div style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
+                          <div style={{ fontSize: 13, fontWeight: 700, color: theme.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{r.adName || "Untitled"}</div>
+                          <div style={{ fontSize: 11, fontWeight: 800, color: r.review?.status === "Needs changes" ? "#f97316" : r.review?.status ? "#16a34a" : theme.faint, whiteSpace: "nowrap" }}>{r.review?.status || "Pending"}</div>
+                        </div>
+                        {r.review?.note && <div style={{ fontSize: 12, color: theme.muted, lineHeight: 1.4, marginTop: 6 }}>{r.review.note}</div>}
+                        <button onClick={() => navigator.clipboard.writeText(r.url)} style={{ marginTop: 8, background: "transparent", border: "none", color: "#f59e0b", fontSize: 12, fontWeight: 700, cursor: "pointer", padding: 0 }}>Copy link</button>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
                 <div style={{ marginBottom: 16 }}>
                   <div style={{ fontSize: 12, fontWeight: 700, color: theme.text, textTransform: "uppercase" }}>Saved Ads</div>
-                  <div style={{ fontSize: 13, color: theme.muted, marginTop: 4 }}>{saved.length} ad{saved.length !== 1 ? "s" : ""}</div>
+                  <div style={{ fontSize: 13, color: theme.muted, marginTop: 4 }}>{visibleSaved.length} ad{visibleSaved.length !== 1 ? "s" : ""}{activeCampaign ? ` in ${activeCampaign.name}` : ""}</div>
                 </div>
                 <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                  {saved.length === 0 && <div style={{ color: theme.faint, fontSize: 13, textAlign: "center", padding: "40px 0" }}>No ads saved yet.</div>}
-                  {saved.map(s => (
+                  {visibleSaved.length === 0 && <div style={{ color: theme.faint, fontSize: 13, textAlign: "center", padding: "40px 0" }}>No ads saved here yet.</div>}
+                  {visibleSaved.map(s => (
                     <div key={s.id} onClick={() => doLoad(s.id)} style={{ background: ad.id === s.id ? theme.panel : "transparent", border: `1px solid ${ad.id === s.id ? theme.border : "transparent"}`, borderRadius: 10, padding: "12px", cursor: "pointer", display: "flex", gap: 12, alignItems: "flex-start", transition: "all .2s" }}>
                       <div style={{ width: 40, height: 40, borderRadius: 8, background: theme.panel, flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 16 }}>
                         {s.hasImage ? "🖼" : "📋"}
@@ -1527,6 +1695,15 @@ Return ONLY valid JSON: {"${type}": "the new variant here"}`;
               <div>
                 <label style={L}>Ad Name</label>
                 <input value={ad.name} onChange={e => upd("name", e.target.value)} placeholder="Summer Collection" style={I} />
+              </div>
+
+              <div>
+                <label style={L}>Campaign Folder</label>
+                <select value={ad.campaignId || ""} onChange={e => upd("campaignId", e.target.value)} style={{ ...I, appearance: "none" }}>
+                  <option value="">Unassigned</option>
+                  {campaigns.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                </select>
+                {campaigns.length === 0 && <div style={{ fontSize: 11, color: theme.faint, marginTop: 6 }}>Create folders from the Library panel.</div>}
               </div>
 
               {/* ── Brand Profile ── */}
