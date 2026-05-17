@@ -1071,6 +1071,38 @@
         } catch(e) {}
       };
 
+      const duplicateSavedAd = async (id, e) => {
+        e.stopPropagation();
+        try {
+          const r = await storage.get(`rg-ad:${id}`);
+          if (!r) return;
+          const source = JSON.parse(r.value);
+          const nextId = `ad_${Date.now()}`;
+          const data = {
+            ...source,
+            id: nextId,
+            name: `${source.name || "Untitled"} Variant`,
+            savedAt: new Date().toISOString(),
+          };
+          await storage.set(`rg-ad:${nextId}`, JSON.stringify(data));
+          const entry = {
+            id: nextId,
+            name: data.name,
+            headline: data.headline,
+            hasImage: hasCreativeImage(data),
+            savedAt: data.savedAt,
+            campaignId: data.campaignId || "",
+          };
+          const next = [entry, ...saved];
+          await storage.set("rg-ads-index", JSON.stringify(next));
+          setSaved(next);
+          setAd(data);
+          setCarouselEditIdx(0);
+          setShowLib(false);
+          if (isMobile) setMobileTab("edit");
+        } catch(e) {}
+      };
+
       const createCampaign = async () => {
         const name = newCampaignName.trim();
         if (!name) return;
@@ -1383,6 +1415,7 @@ Return ONLY valid JSON: {"${type}": "the new variant here"}`;
       const visibleSaved = activeCampaignId ? saved.filter(s => s.campaignId === activeCampaignId) : saved;
       const visibleShares = activeCampaignId ? shareRecords.filter(r => r.campaignId === activeCampaignId) : shareRecords;
       const activeCampaign = campaigns.find(c => c.id === activeCampaignId);
+      const reviewForAd = (id) => shareRecords.find(r => r.adId === id && r.review)?.review || null;
 
       // ── SHARED / CLIENT VIEW ──────────────────────────────────────────────
       if (isSharedView) {
@@ -1634,7 +1667,15 @@ Return ONLY valid JSON: {"${type}": "the new variant here"}`;
                         {s.hasImage ? "🖼" : "📋"}
                       </div>
                       <div style={{ flex: 1, minWidth: 0 }}>
-                        <div style={{ fontSize: 14, fontWeight: 600, color: theme.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{s.name || "Untitled"}</div>
+                        {(() => {
+                          const review = reviewForAd(s.id);
+                          return (
+                            <div style={{ display: "flex", gap: 8, alignItems: "center", minWidth: 0 }}>
+                              <div style={{ flex: 1, fontSize: 14, fontWeight: 600, color: theme.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{s.name || "Untitled"}</div>
+                              {review && <div style={{ fontSize: 10, fontWeight: 800, color: review.status === "Needs changes" ? "#f97316" : "#16a34a", background: review.status === "Needs changes" ? "rgba(249,115,22,0.1)" : "rgba(22,163,74,0.1)", borderRadius: 999, padding: "3px 7px", flexShrink: 0 }}>{review.status}</div>}
+                            </div>
+                          );
+                        })()}
                         <div style={{ fontSize: 12, color: theme.muted, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", marginTop: 2 }}>{s.headline || "No headline"}</div>
                         <div style={{ fontSize: 11, color: theme.faint, marginTop: 4 }}>{new Date(s.savedAt).toLocaleDateString()}</div>
                         <select
@@ -1646,6 +1687,7 @@ Return ONLY valid JSON: {"${type}": "the new variant here"}`;
                           <option value="">Move to: Unassigned</option>
                           {campaigns.map(c => <option key={c.id} value={c.id}>Move to: {c.name}</option>)}
                         </select>
+                        <button onClick={e => duplicateSavedAd(s.id, e)} style={{ marginTop: 8, background: theme.segment, color: theme.text, border: `1px solid ${theme.border}`, borderRadius: 7, padding: "7px 9px", fontSize: 12, fontWeight: 800, cursor: "pointer" }}>Duplicate as Variant</button>
                       </div>
                       <button onClick={e => doDelete(s.id, e)} style={{ background: "none", border: "none", color: "#bbb", cursor: "pointer", fontSize: 18, padding: "4px", flexShrink: 0 }}>✕</button>
                     </div>
@@ -1709,7 +1751,15 @@ Return ONLY valid JSON: {"${type}": "the new variant here"}`;
                         {s.hasImage ? "🖼" : "📋"}
                       </div>
                       <div style={{ flex: 1, minWidth: 0 }}>
-                        <div style={{ fontSize: 13, fontWeight: 600, color: theme.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{s.name || "Untitled"}</div>
+                        {(() => {
+                          const review = reviewForAd(s.id);
+                          return (
+                            <div style={{ display: "flex", gap: 8, alignItems: "center", minWidth: 0 }}>
+                              <div style={{ flex: 1, fontSize: 13, fontWeight: 600, color: theme.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{s.name || "Untitled"}</div>
+                              {review && <div style={{ fontSize: 10, fontWeight: 800, color: review.status === "Needs changes" ? "#f97316" : "#16a34a", background: review.status === "Needs changes" ? "rgba(249,115,22,0.1)" : "rgba(22,163,74,0.1)", borderRadius: 999, padding: "3px 7px", flexShrink: 0 }}>{review.status}</div>}
+                            </div>
+                          );
+                        })()}
                         <div style={{ fontSize: 12, color: theme.muted, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", marginTop: 2 }}>{s.headline || "No headline"}</div>
                         <div style={{ fontSize: 11, color: theme.faint, marginTop: 4 }}>{new Date(s.savedAt).toLocaleDateString()}</div>
                         <select
@@ -1721,6 +1771,7 @@ Return ONLY valid JSON: {"${type}": "the new variant here"}`;
                           <option value="">Move to: Unassigned</option>
                           {campaigns.map(c => <option key={c.id} value={c.id}>Move to: {c.name}</option>)}
                         </select>
+                        <button onClick={e => duplicateSavedAd(s.id, e)} style={{ marginTop: 8, background: theme.segment, color: theme.text, border: `1px solid ${theme.border}`, borderRadius: 7, padding: "7px 9px", fontSize: 12, fontWeight: 800, cursor: "pointer" }}>Duplicate as Variant</button>
                       </div>
                       <button onClick={(e) => doDelete(s.id, e)} style={{ background: "none", border: "none", color: "#bbb", cursor: "pointer", fontSize: 16, padding: 0, flexShrink: 0 }}>✕</button>
                     </div>
