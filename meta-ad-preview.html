@@ -966,8 +966,20 @@
         const toneObj = AI_TONES.find(t => t.id === aiTone);
         const toneSection = toneObj ? `\nTONE: ${toneObj.label} — ${toneObj.prompt}\n` : "";
         const hookSection = aiHook.trim() ? `\nHOOK / OFFER: ${aiHook.trim()}\n` : "";
+
+        // Pull image — carousel uses first card's image
+        const rawImage = ad.adType === "carousel"
+          ? (ad.carouselCards?.[0]?.image || null)
+          : (ad.image || null);
+        const imageBlock = rawImage
+          ? (() => { const m = rawImage.match(/^data:(image\/[a-z+]+);base64,(.+)$/); return m ? { type: "image", source: { type: "base64", media_type: m[1], data: m[2] } } : null; })()
+          : null;
+        const creativeSection = imageBlock
+          ? "\nCREATIVE: The ad image is attached. Look at what's shown — subject, mood, setting, colors — and write copy that feels made for this specific visual, not generic.\n"
+          : "";
+
         const prompt = `You are a Meta ads copywriter. Generate 3 headline variants and 3 primary text variants for a Meta (Facebook/Instagram) ad.
-${productSection}${voiceSection}${toneSection}${hookSection}
+${productSection}${voiceSection}${toneSection}${hookSection}${creativeSection}
 AD CONTEXT:
 ${context || "No context provided — write general high-converting copy."}
 
@@ -980,6 +992,9 @@ ${selectedProduct ? `- Specific to ${selectedProduct.name} — keep it relevant`
 - NEVER use em dashes (—) or en dashes (–) anywhere. They sound like AI. Use a period, comma, or rewrite the sentence instead.
 Return ONLY valid JSON, no extra text:
 {"headlines":["h1","h2","h3"],"primaryTexts":["t1","t2","t3"]}`;
+        const userContent = imageBlock
+          ? [imageBlock, { type: "text", text: prompt }]
+          : prompt;
         try {
           const res = await fetch("https://api.anthropic.com/v1/messages", {
             method: "POST",
@@ -992,7 +1007,7 @@ Return ONLY valid JSON, no extra text:
             body: JSON.stringify({
               model: "claude-opus-4-7",
               max_tokens: 1024,
-              messages: [{ role: "user", content: prompt }],
+              messages: [{ role: "user", content: userContent }],
             }),
           });
           if (!res.ok) {
@@ -1030,20 +1045,30 @@ Return ONLY valid JSON, no extra text:
         const selectedProduct = products.find(p => p.id === selectedProductId);
         const limit = type === "headline" ? "≤27 chars ideally, hard max 40 chars" : "≤125 chars ideally, hard max 500 chars";
         const toneObj = AI_TONES.find(t => t.id === aiTone);
+        const rawImage = ad.adType === "carousel"
+          ? (ad.carouselCards?.[0]?.image || null)
+          : (ad.image || null);
+        const imageBlock = rawImage
+          ? (() => { const m = rawImage.match(/^data:(image\/[a-z+]+);base64,(.+)$/); return m ? { type: "image", source: { type: "base64", media_type: m[1], data: m[2] } } : null; })()
+          : null;
         const prompt = `Generate 1 new Meta ad ${type} variant. Make it meaningfully different from these existing variants:
 ${existing.map((v, i) => `${i + 1}. ${v}`).join("\n")}
 ${selectedProduct ? `\nProduct: ${selectedProduct.name}${selectedProduct.description ? ` — ${selectedProduct.description}` : ""}` : ""}
 ${brandVoice.text ? `\nBrand Voice: ${brandVoice.text}` : ""}
 ${toneObj ? `\nTone: ${toneObj.label} — ${toneObj.prompt}` : ""}
 ${aiHook.trim() ? `\nHook/Offer: ${aiHook.trim()}` : ""}
+${imageBlock ? "The ad image is attached. Let it inform the copy angle." : ""}
 Requirement: ${limit}
 NEVER use em dashes (—) or en dashes (–). Use a period or comma instead.
 Return ONLY valid JSON: {"${type}": "the new variant here"}`;
+        const userContent = imageBlock
+          ? [imageBlock, { type: "text", text: prompt }]
+          : prompt;
         try {
           const res = await fetch("https://api.anthropic.com/v1/messages", {
             method: "POST",
             headers: { "x-api-key": anthropicKey, "anthropic-version": "2023-06-01", "anthropic-dangerous-direct-browser-access": "true", "Content-Type": "application/json" },
-            body: JSON.stringify({ model: "claude-opus-4-7", max_tokens: 256, messages: [{ role: "user", content: prompt }] }),
+            body: JSON.stringify({ model: "claude-opus-4-7", max_tokens: 256, messages: [{ role: "user", content: userContent }] }),
           });
           if (!res.ok) throw new Error(`${res.status}`);
           const data = await res.json();
@@ -1786,14 +1811,16 @@ Return ONLY valid JSON: {"${type}": "the new variant here"}`;
                   disabled={!anthropicKey || aiLoading}
                   style={{ width: "100%", background: aiLoading ? "#e0e0e0" : !anthropicKey ? "#e8e4ff" : "#6d4aff", color: aiLoading ? "#aaa" : !anthropicKey ? "#b0a0ff" : "#fff", border: "none", borderRadius: 8, padding: "11px 0", fontSize: 14, fontWeight: 700, cursor: (!anthropicKey || aiLoading) ? "default" : "pointer", transition: "all .2s" }}
                 >
-                  {aiLoading ? "Generating…" : !anthropicKey ? "Add API key to generate"
+                  {aiLoading ? "Analyzing & generating…" : !anthropicKey ? "Add API key to generate"
                     : (() => {
                         const p = products.find(p => p.id === selectedProductId);
                         const tone = AI_TONES.find(t => t.id === aiTone);
+                        const hasImage = ad.adType === "carousel" ? !!ad.carouselCards?.[0]?.image : !!ad.image;
                         const parts = [];
                         if (p) parts.push(p.name);
                         if (tone) parts.push(tone.label);
                         if (brandVoice.text) parts.push("Voice");
+                        if (hasImage) parts.push("📷 Creative");
                         return parts.length ? `✨ Generate — ${parts.join(" · ")}` : "✨ Generate Copy";
                       })()
                   }
