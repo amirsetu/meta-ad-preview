@@ -726,6 +726,14 @@
       </div>
     );
 
+    const AI_TONES = [
+      { id: "curiosity",    label: "Curiosity",    prompt: "spark intrigue — make them want to know more without giving everything away" },
+      { id: "urgency",      label: "Urgency",      prompt: "time-sensitive, create FOMO, motivate immediate action" },
+      { id: "social_proof", label: "Social Proof", prompt: "lead with results, numbers, or customer wins to build credibility" },
+      { id: "emotional",    label: "Emotional",    prompt: "connect with real pain points or aspirations, make it personal" },
+      { id: "direct",       label: "Direct",       prompt: "straight to the benefit, zero fluff, say exactly what it does" },
+    ];
+
     // ─── MAIN APP ──────────────────────────────────────────────────────────
     function App() {
       const [ad, setAd]                  = useState({ ...EMPTY });
@@ -755,6 +763,12 @@
       const [selectedProductId, setSelectedProductId] = useState("");
       const [showProductsPanel, setShowProductsPanel] = useState(false);
       const [editingProduct, setEditingProduct] = useState(null);
+      const [aiHook, setAiHook]               = useState("");
+      const [aiTone, setAiTone]               = useState("");
+      const [aiHistory, setAiHistory]         = useState([]);
+      const [showAiHistory, setShowAiHistory] = useState(false);
+      const [regenLoading, setRegenLoading]   = useState("");
+      const [exportCopyMsg, setExportCopyMsg] = useState("");
       const fileRef = useRef();
       const previewRef = useRef();
       const voiceFileRef = useRef();
@@ -780,6 +794,10 @@
               setProducts(loaded);
               if (loaded.length > 0) setSelectedProductId(loaded[0].id);
             }
+          } catch(e) {}
+          try {
+            const h = await storage.get("rg-ai-history");
+            if (h) setAiHistory(JSON.parse(h.value));
           } catch(e) {}
           // Load shared ad from URL ?share=<id>
           const shareId = new URLSearchParams(window.location.search).get("share");
@@ -945,8 +963,11 @@
         const voiceSection = brandVoice.text
           ? `\nBRAND VOICE (follow this tone and style strictly):\n${brandVoice.text}\n`
           : "";
+        const toneObj = AI_TONES.find(t => t.id === aiTone);
+        const toneSection = toneObj ? `\nTONE: ${toneObj.label} — ${toneObj.prompt}\n` : "";
+        const hookSection = aiHook.trim() ? `\nHOOK / OFFER: ${aiHook.trim()}\n` : "";
         const prompt = `You are a Meta ads copywriter. Generate 3 headline variants and 3 primary text variants for a Meta (Facebook/Instagram) ad.
-${productSection}${voiceSection}
+${productSection}${voiceSection}${toneSection}${hookSection}
 AD CONTEXT:
 ${context || "No context provided — write general high-converting copy."}
 
@@ -954,8 +975,8 @@ REQUIREMENTS:
 - Headlines: ≤27 chars ideally, hard max 40 chars
 - Primary text: ≤125 chars ideally, hard max 500 chars
 - Conversion-focused, benefit-driven, specific
-- Vary the angle across 3 variants (e.g. curiosity / urgency / social proof)
-${selectedProduct ? `- This is specifically for ${selectedProduct.name} — make it relevant to this product` : ""}
+- All 3 variants must use the ${toneObj ? toneObj.label : "specified"} angle — vary the wording but keep the same tone
+${selectedProduct ? `- Specific to ${selectedProduct.name} — keep it relevant` : ""}
 Return ONLY valid JSON, no extra text:
 {"headlines":["h1","h2","h3"],"primaryTexts":["t1","t2","t3"]}`;
         try {
@@ -984,10 +1005,81 @@ Return ONLY valid JSON, no extra text:
           const suggestions = JSON.parse(match[0]);
           if (!Array.isArray(suggestions.headlines) || !Array.isArray(suggestions.primaryTexts)) throw new Error("Unexpected response structure");
           setAiSuggestions(suggestions);
+          // save to history
+          const entry = { ts: new Date().toISOString(), headlines: suggestions.headlines, primaryTexts: suggestions.primaryTexts, productName: selectedProduct?.name || "", tone: aiTone, hook: aiHook.trim() };
+          setAiHistory(prev => {
+            const next = [entry, ...prev].slice(0, 10);
+            storage.set("rg-ai-history", JSON.stringify(next)).catch(() => {});
+            return next;
+          });
         } catch(e) {
           setAiError(e.message || "Something went wrong");
         }
         setAiLoading(false);
+      };
+
+      const regenerateSingle = async (type, index) => {
+        if (!anthropicKey) return;
+        const key = `${type[0]}_${index}`;
+        setRegenLoading(key);
+        const existing = type === "headline" ? aiSuggestions.headlines : aiSuggestions.primaryTexts;
+        const selectedProduct = products.find(p => p.id === selectedProductId);
+        const limit = type === "headline" ? "≤27 chars ideally, hard max 40 chars" : "≤125 chars ideally, hard max 500 chars";
+        const toneObj = AI_TONES.find(t => t.id === aiTone);
+        const prompt = `Generate 1 new Meta ad ${type} variant. Make it meaningfully different from these existing variants:
+${existing.map((v, i) => `${i + 1}. ${v}`).join("\n")}
+${selectedProduct ? `\nProduct: ${selectedProduct.name}${selectedProduct.description ? ` — ${selectedProduct.description}` : ""}` : ""}
+${brandVoice.text ? `\nBrand Voice: ${brandVoice.text}` : ""}
+${toneObj ? `\nTone: ${toneObj.label} — ${toneObj.prompt}` : ""}
+${aiHook.trim() ? `\nHook/Offer: ${aiHook.trim()}` : ""}
+Requirement: ${limit}
+Return ONLY valid JSON: {"${type}": "the new variant here"}`;
+        try {
+          const res = await fetch("https://api.anthropic.com/v1/messages", {
+            method: "POST",
+            headers: { "x-api-key": anthropicKey, "anthropic-version": "2023-06-01", "anthropic-dangerous-direct-browser-access": "true", "Content-Type": "application/json" },
+            body: JSON.stringify({ model: "claude-opus-4-7", max_tokens: 256, messages: [{ role: "user", content: prompt }] }),
+          });
+          if (!res.ok) throw new Error(`${res.status}`);
+          const data = await res.json();
+          const match = data.content[0].text.match(/\{[\s\S]*\}/);
+          if (match) {
+            const result = JSON.parse(match[0]);
+            const newVal = result[type] || result.headline || result.primaryText || "";
+            if (newVal) {
+              setAiSuggestions(prev => {
+                const field = type === "headline" ? "headlines" : "primaryTexts";
+                const arr = [...prev[field]];
+                arr[index] = newVal;
+                return { ...prev, [field]: arr };
+              });
+            }
+          }
+        } catch(e) {}
+        setRegenLoading("");
+      };
+
+      const exportForAdsManager = async () => {
+        if (!aiSuggestions) return;
+        const lines = [
+          "HEADLINES",
+          ...aiSuggestions.headlines.map((h, i) => `${i + 1}. ${h} (${h.length} chars)`),
+          "",
+          "PRIMARY TEXT",
+          ...aiSuggestions.primaryTexts.map((t, i) => `${i + 1}. ${t} (${t.length} chars)`),
+          "",
+          "CURRENT AD FIELDS",
+          ad.headline      && `Headline: ${ad.headline}`,
+          ad.primaryText   && `Primary Text: ${ad.primaryText}`,
+          ad.description   && `Description: ${ad.description}`,
+          ad.cta !== "No Button" && `CTA: ${ad.cta}`,
+          ad.destinationUrl && `URL: ${ad.destinationUrl}`,
+        ].filter(Boolean).join("\n");
+        try {
+          await navigator.clipboard.writeText(lines);
+          setExportCopyMsg("Copied! ✓");
+        } catch(e) { setExportCopyMsg("Error"); }
+        setTimeout(() => setExportCopyMsg(""), 2500);
       };
 
       const saveVoice = async (next) => {
@@ -1658,6 +1750,30 @@ Return ONLY valid JSON, no extra text:
                   )}
                 </div>
 
+                {/* Hook / Offer */}
+                <div style={{ marginBottom: 10 }}>
+                  <label style={{ ...L, color: "#888", marginBottom: 4 }}>Hook / Offer <span style={{ fontWeight: 400, textTransform: "none", letterSpacing: 0, color: "#bbb" }}>(optional)</span></label>
+                  <input
+                    value={aiHook}
+                    onChange={e => setAiHook(e.target.value)}
+                    placeholder="e.g. 50% off this week, just hit 10k customers, new feature launched"
+                    style={{ ...I, fontSize: 13 }}
+                  />
+                </div>
+
+                {/* Tone chips */}
+                <div style={{ marginBottom: 12 }}>
+                  <label style={{ ...L, color: "#888", marginBottom: 6 }}>Tone <span style={{ fontWeight: 400, textTransform: "none", letterSpacing: 0, color: "#bbb" }}>(optional)</span></label>
+                  <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                    {AI_TONES.map(t => (
+                      <button key={t.id} onClick={() => setAiTone(p => p === t.id ? "" : t.id)}
+                        style={{ background: aiTone === t.id ? "#6d4aff" : "#f0eeff", color: aiTone === t.id ? "#fff" : "#6d4aff", border: `1px solid ${aiTone === t.id ? "#6d4aff" : "#d4c8ff"}`, borderRadius: 20, padding: "5px 12px", fontSize: 12, fontWeight: 600, cursor: "pointer", transition: "all .15s" }}>
+                        {t.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
                 {/* Generate button */}
                 <button
                   onClick={generateCopy}
@@ -1667,10 +1783,12 @@ Return ONLY valid JSON, no extra text:
                   {aiLoading ? "Generating…" : !anthropicKey ? "Add API key to generate"
                     : (() => {
                         const p = products.find(p => p.id === selectedProductId);
-                        if (p && brandVoice.text) return `✨ Generate for ${p.name} + Voice`;
-                        if (p) return `✨ Generate for ${p.name}`;
-                        if (brandVoice.text) return "✨ Generate with Brand Voice";
-                        return "✨ Generate Copy";
+                        const tone = AI_TONES.find(t => t.id === aiTone);
+                        const parts = [];
+                        if (p) parts.push(p.name);
+                        if (tone) parts.push(tone.label);
+                        if (brandVoice.text) parts.push("Voice");
+                        return parts.length ? `✨ Generate — ${parts.join(" · ")}` : "✨ Generate Copy";
                       })()
                   }
                 </button>
@@ -1681,31 +1799,75 @@ Return ONLY valid JSON, no extra text:
 
                 {aiSuggestions && (
                   <div style={{ marginTop: 14 }}>
+
+                    {/* Headlines */}
                     <div style={{ fontSize: 11, fontWeight: 700, color: "#888", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 8 }}>Headlines</div>
                     <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 14 }}>
                       {aiSuggestions.headlines.map((h, i) => (
                         <div key={i} style={{ background: "#fff", border: "1px solid #e8e4ff", borderRadius: 8, padding: "10px 12px" }}>
-                          <div style={{ display: "flex", alignItems: "flex-start", gap: 8, marginBottom: 6 }}>
+                          <div style={{ display: "flex", alignItems: "flex-start", gap: 8, marginBottom: 8 }}>
                             <span style={{ flex: 1, fontSize: 13, color: "#1d1d1f", lineHeight: 1.4 }}>{h}</span>
                             <span style={{ fontSize: 11, fontFamily: "monospace", fontWeight: 700, color: cc(h.length, 27, 40), flexShrink: 0 }}>{h.length}/40</span>
                           </div>
-                          <button onClick={() => upd("headline", h.slice(0, 40))} style={{ background: "#6d4aff", color: "#fff", border: "none", borderRadius: 6, padding: "5px 12px", fontSize: 12, fontWeight: 600, cursor: "pointer" }}>Use</button>
+                          <div style={{ display: "flex", gap: 6 }}>
+                            <button onClick={() => upd("headline", h.slice(0, 40))} style={{ flex: 1, background: "#6d4aff", color: "#fff", border: "none", borderRadius: 6, padding: "6px 0", fontSize: 12, fontWeight: 600, cursor: "pointer" }}>Use</button>
+                            <button onClick={() => regenerateSingle("headline", i)} disabled={!!regenLoading} title="Regenerate this variant" style={{ background: regenLoading === `h_${i}` ? "#e0e0e0" : "#f0eeff", color: regenLoading === `h_${i}` ? "#aaa" : "#6d4aff", border: "1px solid #d4c8ff", borderRadius: 6, padding: "6px 10px", fontSize: 13, cursor: regenLoading ? "default" : "pointer" }}>
+                              {regenLoading === `h_${i}` ? "…" : "↻"}
+                            </button>
+                            <button onClick={() => navigator.clipboard.writeText(h)} title="Copy to clipboard" style={{ background: "#f0eeff", color: "#6d4aff", border: "1px solid #d4c8ff", borderRadius: 6, padding: "6px 10px", fontSize: 13, cursor: "pointer" }}>📋</button>
+                          </div>
                         </div>
                       ))}
                     </div>
 
+                    {/* Primary Texts */}
                     <div style={{ fontSize: 11, fontWeight: 700, color: "#888", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 8 }}>Primary Text</div>
                     <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
                       {aiSuggestions.primaryTexts.map((t, i) => (
                         <div key={i} style={{ background: "#fff", border: "1px solid #e8e4ff", borderRadius: 8, padding: "10px 12px" }}>
-                          <div style={{ fontSize: 13, color: "#1d1d1f", lineHeight: 1.5, marginBottom: 6 }}>{t}</div>
-                          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-                            <span style={{ fontSize: 11, fontFamily: "monospace", fontWeight: 700, color: cc(t.length, 125, 500) }}>{t.length}/500</span>
-                            <button onClick={() => upd("primaryText", t)} style={{ background: "#6d4aff", color: "#fff", border: "none", borderRadius: 6, padding: "5px 12px", fontSize: 12, fontWeight: 600, cursor: "pointer" }}>Use</button>
+                          <div style={{ fontSize: 13, color: "#1d1d1f", lineHeight: 1.5, marginBottom: 8 }}>{t}</div>
+                          <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+                            <span style={{ fontSize: 11, fontFamily: "monospace", fontWeight: 700, color: cc(t.length, 125, 500), marginRight: "auto" }}>{t.length}/500</span>
+                            <button onClick={() => upd("primaryText", t)} style={{ background: "#6d4aff", color: "#fff", border: "none", borderRadius: 6, padding: "6px 12px", fontSize: 12, fontWeight: 600, cursor: "pointer" }}>Use</button>
+                            <button onClick={() => regenerateSingle("primaryText", i)} disabled={!!regenLoading} title="Regenerate this variant" style={{ background: regenLoading === `p_${i}` ? "#e0e0e0" : "#f0eeff", color: regenLoading === `p_${i}` ? "#aaa" : "#6d4aff", border: "1px solid #d4c8ff", borderRadius: 6, padding: "6px 10px", fontSize: 13, cursor: regenLoading ? "default" : "pointer" }}>
+                              {regenLoading === `p_${i}` ? "…" : "↻"}
+                            </button>
+                            <button onClick={() => navigator.clipboard.writeText(t)} title="Copy to clipboard" style={{ background: "#f0eeff", color: "#6d4aff", border: "1px solid #d4c8ff", borderRadius: 6, padding: "6px 10px", fontSize: 13, cursor: "pointer" }}>📋</button>
                           </div>
                         </div>
                       ))}
                     </div>
+
+                    {/* Export to Ads Manager */}
+                    <button onClick={exportForAdsManager} style={{ width: "100%", marginTop: 12, background: exportCopyMsg ? "#34c759" : "#f0eeff", color: exportCopyMsg ? "#fff" : "#6d4aff", border: `1px solid ${exportCopyMsg ? "#34c759" : "#d4c8ff"}`, borderRadius: 8, padding: "10px 0", fontSize: 13, fontWeight: 700, cursor: "pointer", transition: "all .2s" }}>
+                      {exportCopyMsg || "📋 Copy all for Ads Manager"}
+                    </button>
+
+                    {/* History */}
+                    {aiHistory.length > 1 && (
+                      <div style={{ marginTop: 14 }}>
+                        <button onClick={() => setShowAiHistory(p => !p)} style={{ background: "none", border: "none", color: "#aaa", fontSize: 12, fontWeight: 600, cursor: "pointer", padding: 0 }}>
+                          {showAiHistory ? "▲ Hide history" : `▼ History (${aiHistory.length - 1} previous)`}
+                        </button>
+                        {showAiHistory && (
+                          <div style={{ marginTop: 8, display: "flex", flexDirection: "column", gap: 6 }}>
+                            {aiHistory.slice(1).map((entry, i) => (
+                              <div key={i} onClick={() => { setAiSuggestions({ headlines: entry.headlines, primaryTexts: entry.primaryTexts }); setShowAiHistory(false); }}
+                                style={{ background: "#fff", border: "1px solid #ebebeb", borderRadius: 8, padding: "10px 12px", cursor: "pointer" }}>
+                                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4 }}>
+                                  <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                                    {entry.productName && <span style={{ fontSize: 10, background: "#f0eeff", color: "#6d4aff", borderRadius: 10, padding: "2px 7px", fontWeight: 700 }}>{entry.productName}</span>}
+                                    {entry.tone && <span style={{ fontSize: 10, background: "#f5f5f7", color: "#888", borderRadius: 10, padding: "2px 7px", fontWeight: 600 }}>{entry.tone}</span>}
+                                  </div>
+                                  <span style={{ fontSize: 11, color: "#bbb" }}>{new Date(entry.ts).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</span>
+                                </div>
+                                <div style={{ fontSize: 12, color: "#888", overflow: "hidden", whiteSpace: "nowrap", textOverflow: "ellipsis" }}>{entry.headlines[0]}</div>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    )}
                   </div>
                 )}
               </div>
