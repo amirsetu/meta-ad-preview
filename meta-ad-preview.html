@@ -977,6 +977,7 @@ REQUIREMENTS:
 - Conversion-focused, benefit-driven, specific
 - All 3 variants must use the ${toneObj ? toneObj.label : "specified"} angle — vary the wording but keep the same tone
 ${selectedProduct ? `- Specific to ${selectedProduct.name} — keep it relevant` : ""}
+- NEVER use em dashes (—) or en dashes (–) anywhere. They sound like AI. Use a period, comma, or rewrite the sentence instead.
 Return ONLY valid JSON, no extra text:
 {"headlines":["h1","h2","h3"],"primaryTexts":["t1","t2","t3"]}`;
         try {
@@ -1004,6 +1005,9 @@ Return ONLY valid JSON, no extra text:
           if (!match) throw new Error("Invalid response format");
           const suggestions = JSON.parse(match[0]);
           if (!Array.isArray(suggestions.headlines) || !Array.isArray(suggestions.primaryTexts)) throw new Error("Unexpected response structure");
+          const noDashes = (s) => s.replace(/\s*[—–]\s*/g, ", ").replace(/,\s*,/g, ",");
+          suggestions.headlines = suggestions.headlines.map(noDashes);
+          suggestions.primaryTexts = suggestions.primaryTexts.map(noDashes);
           setAiSuggestions(suggestions);
           // save to history
           const entry = { ts: new Date().toISOString(), headlines: suggestions.headlines, primaryTexts: suggestions.primaryTexts, productName: selectedProduct?.name || "", tone: aiTone, hook: aiHook.trim() };
@@ -1033,6 +1037,7 @@ ${brandVoice.text ? `\nBrand Voice: ${brandVoice.text}` : ""}
 ${toneObj ? `\nTone: ${toneObj.label} — ${toneObj.prompt}` : ""}
 ${aiHook.trim() ? `\nHook/Offer: ${aiHook.trim()}` : ""}
 Requirement: ${limit}
+NEVER use em dashes (—) or en dashes (–). Use a period or comma instead.
 Return ONLY valid JSON: {"${type}": "the new variant here"}`;
         try {
           const res = await fetch("https://api.anthropic.com/v1/messages", {
@@ -1045,7 +1050,8 @@ Return ONLY valid JSON: {"${type}": "the new variant here"}`;
           const match = data.content[0].text.match(/\{[\s\S]*\}/);
           if (match) {
             const result = JSON.parse(match[0]);
-            const newVal = result[type] || result.headline || result.primaryText || "";
+            const raw = result[type] || result.headline || result.primaryText || "";
+            const newVal = raw.replace(/\s*[—–]\s*/g, ", ").replace(/,\s*,/g, ",");
             if (newVal) {
               setAiSuggestions(prev => {
                 const field = type === "headline" ? "headlines" : "primaryTexts";
