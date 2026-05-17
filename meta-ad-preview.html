@@ -63,6 +63,30 @@
       },
     };
 
+    // ─── SUPABASE SHARE ───────────────────────────────────────────────────────
+    const SUPA_URL = "https://rynuefnfmsfhccvyxtta.supabase.co";
+    const SUPA_KEY = "sb_publishable_0__wCuDt6NLtAOIdTYKaWg_BJD9-mGC";
+    const supaHdr  = { "apikey": SUPA_KEY, "Authorization": `Bearer ${SUPA_KEY}`, "Content-Type": "application/json" };
+
+    const pushShare = async (adState, brandState) => {
+      const id = Math.random().toString(36).slice(2, 9);
+      const res = await fetch(`${SUPA_URL}/rest/v1/ad_shares`, {
+        method: "POST",
+        headers: { ...supaHdr, "Prefer": "return=minimal" },
+        body: JSON.stringify({ id, data: { ad: adState, brand: brandState } }),
+      });
+      if (!res.ok) throw new Error(`${res.status}`);
+      return id;
+    };
+
+    const fetchShare = async (id) => {
+      const res = await fetch(`${SUPA_URL}/rest/v1/ad_shares?id=eq.${encodeURIComponent(id)}&select=data`, { headers: supaHdr });
+      if (!res.ok) throw new Error(`${res.status}`);
+      const rows = await res.json();
+      if (!rows.length) throw new Error("not found");
+      return rows[0].data;
+    };
+
     const LIMITS = {
       primaryText: { rec: 125, max: 500 },
       headline:    { rec: 27,  max: 40  },
@@ -716,6 +740,7 @@
       const [mobileTab, setMobileTab] = useState("edit");
       const [brand, setBrand] = useState({ ...DEFAULT_BRAND });
       const [exportingPNG, setExportingPNG] = useState(false);
+      const [shareMsg, setShareMsg]        = useState("");
       const fileRef = useRef();
       const previewRef = useRef();
 
@@ -729,6 +754,15 @@
             const b = await storage.get("rg-brand-settings");
             if (b) setBrand({ ...DEFAULT_BRAND, ...JSON.parse(b.value) });
           } catch(e) {}
+          // Load shared ad from URL ?share=<id>
+          const shareId = new URLSearchParams(window.location.search).get("share");
+          if (shareId) {
+            try {
+              const { ad: sharedAd, brand: sharedBrand } = await fetchShare(shareId);
+              if (sharedAd)    setAd(sharedAd);
+              if (sharedBrand) setBrand(b => ({ ...b, ...sharedBrand }));
+            } catch(e) {}
+          }
         })();
       }, []);
 
@@ -766,6 +800,17 @@
         } catch(e) { console.error("PNG export failed:", e); }
         setExportingPNG(false);
       }, [ad.name, placement]);
+
+      const doShare = async () => {
+        setShareMsg("Sharing…");
+        try {
+          const id  = await pushShare(ad, brand);
+          const url = `${window.location.href.split("?")[0]}?share=${id}`;
+          await navigator.clipboard.writeText(url);
+          setShareMsg("Link copied! ✓");
+        } catch(e) { setShareMsg("Error"); }
+        setTimeout(() => setShareMsg(""), 3500);
+      };
 
       const handleFile = useCallback(async (file) => {
         if (!file?.type.startsWith("image/")) return;
@@ -930,14 +975,14 @@
                     {exportingPNG ? "Exporting…" : "📷 Export PNG"}
                   </button>
                 )}
+                {!isMobile && (
+                  <button onClick={doShare} disabled={!!shareMsg} style={{ background: shareMsg === "Link copied! ✓" ? "#34c759" : shareMsg ? "#e0e0e0" : "#1d1d1f", color: shareMsg === "Link copied! ✓" ? "#fff" : shareMsg ? "#aaa" : "#fff", border: "none", borderRadius: 8, padding: "8px 16px", fontSize: 14, fontWeight: 600, cursor: shareMsg ? "default" : "pointer", transition: "all .2s" }}>
+                    {shareMsg || "🔗 Share"}
+                  </button>
+                )}
                 {isMobile && (
                   <button onClick={() => { setAd({ ...EMPTY }); setCarouselEditIdx(0); setMobileTab("edit"); }} style={{ background: "transparent", color: "#1d1d1f", border: "none", borderRadius: 8, padding: "6px 10px", fontSize: 13, fontWeight: 600, cursor: "pointer" }}>
                     + New
-                  </button>
-                )}
-                {isMobile && mobileTab === "preview" && (
-                  <button onClick={doExportPNG} disabled={exportingPNG} style={{ background: exportingPNG ? "#e0e0e0" : "#f0f0f0", color: exportingPNG ? "#aaa" : "#1d1d1f", border: "1px solid #d0d0d0", borderRadius: 8, padding: "6px 10px", fontSize: 12, fontWeight: 600, cursor: exportingPNG ? "default" : "pointer" }}>
-                    {exportingPNG ? "…" : "📷"}
                   </button>
                 )}
                 <button onClick={doSave} style={{ background: "#f59e0b", color: "#fff", border: "none", borderRadius: 8, padding: isMobile ? "7px 14px" : "8px 20px", fontSize: isMobile ? 13 : 14, fontWeight: 700, cursor: "pointer", transition: "all .2s" }}>
@@ -1228,10 +1273,22 @@
 
             {/* ── PREVIEW ── */}
             {(!isMobile || mobileTab === "preview") && (
-              <div style={{ flex: 1, overflow: "auto", display: "flex", flexDirection: "column", alignItems: isMobile ? "stretch" : "center", justifyContent: isMobile ? "flex-start" : "center", padding: isMobile ? "0" : "32px 20px 40px", background: isMobile ? "#fff" : "linear-gradient(135deg, #f5f5f7 0%, #ffffff 100%)" }}>
-                <div ref={previewRef} style={{ display: "inline-flex" }}>
-                  {preview()}
+              <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
+                <div style={{ flex: 1, overflow: "auto", display: "flex", flexDirection: "column", alignItems: isMobile ? "stretch" : "center", justifyContent: isMobile ? "flex-start" : "center", padding: isMobile ? "0" : "32px 20px 40px", background: isMobile ? "#fff" : "linear-gradient(135deg, #f5f5f7 0%, #ffffff 100%)" }}>
+                  <div ref={previewRef} style={{ display: "inline-flex" }}>
+                    {preview()}
+                  </div>
                 </div>
+                {isMobile && (
+                  <div style={{ flexShrink: 0, background: "rgba(255,255,255,0.97)", borderTop: "1px solid rgba(0,0,0,0.08)", padding: "12px 16px", display: "flex", gap: 10 }}>
+                    <button onClick={doShare} disabled={!!shareMsg} style={{ flex: 1, background: shareMsg === "Link copied! ✓" ? "#34c759" : "#1d1d1f", color: "#fff", border: "none", borderRadius: 10, padding: "13px 0", fontSize: 15, fontWeight: 700, cursor: shareMsg ? "default" : "pointer", transition: "all .2s" }}>
+                      {shareMsg || "🔗 Share Link"}
+                    </button>
+                    <button onClick={doExportPNG} disabled={exportingPNG} style={{ flex: 1, background: exportingPNG ? "#e0e0e0" : "#f0f0f0", color: exportingPNG ? "#aaa" : "#1d1d1f", border: "1px solid #d0d0d0", borderRadius: 10, padding: "13px 0", fontSize: 15, fontWeight: 700, cursor: exportingPNG ? "default" : "pointer", transition: "all .2s" }}>
+                      {exportingPNG ? "Exporting…" : "📷 Export PNG"}
+                    </button>
+                  </div>
+                )}
               </div>
             )}
           </div>
