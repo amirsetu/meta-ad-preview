@@ -748,9 +748,13 @@
       const [aiLoading, setAiLoading]       = useState(false);
       const [aiError, setAiError]           = useState("");
       const [aiSuggestions, setAiSuggestions] = useState(null);
-      const [brandVoice, setBrandVoice]     = useState({ name: "", text: "" });
+      const [brandVoice, setBrandVoice]       = useState({ name: "", text: "" });
       const [showVoicePanel, setShowVoicePanel] = useState(false);
       const [voiceDragging, setVoiceDragging]   = useState(false);
+      const [products, setProducts]             = useState([]);
+      const [selectedProductId, setSelectedProductId] = useState("");
+      const [showProductsPanel, setShowProductsPanel] = useState(false);
+      const [editingProduct, setEditingProduct] = useState(null);
       const fileRef = useRef();
       const previewRef = useRef();
       const voiceFileRef = useRef();
@@ -768,6 +772,14 @@
           try {
             const v = await storage.get("rg-brand-voice");
             if (v) setBrandVoice(JSON.parse(v.value));
+          } catch(e) {}
+          try {
+            const p = await storage.get("rg-products");
+            if (p) {
+              const loaded = JSON.parse(p.value);
+              setProducts(loaded);
+              if (loaded.length > 0) setSelectedProductId(loaded[0].id);
+            }
           } catch(e) {}
           // Load shared ad from URL ?share=<id>
           const shareId = new URLSearchParams(window.location.search).get("share");
@@ -926,20 +938,24 @@
           ad.primaryText   && `Current primary text: ${ad.primaryText}`,
           ad.headline      && `Current headline: ${ad.headline}`,
         ].filter(Boolean).join("\n");
+        const selectedProduct = products.find(p => p.id === selectedProductId);
+        const productSection = selectedProduct
+          ? `\nPRODUCT: ${selectedProduct.name}${selectedProduct.description ? `\n${selectedProduct.description}` : ""}\n`
+          : "";
         const voiceSection = brandVoice.text
           ? `\nBRAND VOICE (follow this tone and style strictly):\n${brandVoice.text}\n`
           : "";
         const prompt = `You are a Meta ads copywriter. Generate 3 headline variants and 3 primary text variants for a Meta (Facebook/Instagram) ad.
-
-Context:
+${productSection}${voiceSection}
+AD CONTEXT:
 ${context || "No context provided — write general high-converting copy."}
-${voiceSection}
+
 REQUIREMENTS:
 - Headlines: ≤27 chars ideally, hard max 40 chars
 - Primary text: ≤125 chars ideally, hard max 500 chars
 - Conversion-focused, benefit-driven, specific
 - Vary the angle across 3 variants (e.g. curiosity / urgency / social proof)
-
+${selectedProduct ? `- This is specifically for ${selectedProduct.name} — make it relevant to this product` : ""}
 Return ONLY valid JSON, no extra text:
 {"headlines":["h1","h2","h3"],"primaryTexts":["t1","t2","t3"]}`;
         try {
@@ -979,6 +995,31 @@ Return ONLY valid JSON, no extra text:
         await storage.set("rg-brand-voice", JSON.stringify(next)).catch(() => {});
       };
 
+      const saveProducts = async (next) => {
+        setProducts(next);
+        await storage.set("rg-products", JSON.stringify(next)).catch(() => {});
+      };
+
+      const upsertProduct = async (product) => {
+        const id = product.id || `prod_${Date.now()}`;
+        const entry = { ...product, id };
+        const next = products.some(p => p.id === id)
+          ? products.map(p => p.id === id ? entry : p)
+          : [...products, entry];
+        await saveProducts(next);
+        setSelectedProductId(id);
+        setEditingProduct(null);
+        setShowProductsPanel(false);
+      };
+
+      const deleteProduct = async (id) => {
+        const next = products.filter(p => p.id !== id);
+        await saveProducts(next);
+        setSelectedProductId(next[0]?.id || "");
+        setEditingProduct(null);
+        setShowProductsPanel(false);
+      };
+
       const loadVoiceFile = async (file) => {
         if (!file) return;
         const text = await file.text();
@@ -992,9 +1033,26 @@ Return ONLY valid JSON, no extra text:
               name = parsed.name || name;
             }
           } catch(e) {}
+        } else if (file.name.endsWith(".md")) {
+          // Parse Claude skill markdown — strip frontmatter, extract readable sections
+          const noFront = text.replace(/^---[\s\S]*?---\n/, "");
+          // Pull name from frontmatter if present
+          const nameMatch = text.match(/^name:\s*(.+)$/m);
+          if (nameMatch) name = nameMatch[1].trim().replace(/-/g, " ").replace(/\b\w/g, c => c.toUpperCase());
+          // Extract Core Voice, Avoid, Drafting Rules, Approved Example Bank sections
+          const sections = ["## Core Voice", "## Avoid", "## Drafting Rules", "## Approved Example Bank"];
+          const lines = noFront.split("\n");
+          let extracted = [];
+          let capturing = false;
+          for (const line of lines) {
+            if (sections.some(s => line.startsWith(s))) { capturing = true; extracted.push(line); continue; }
+            if (capturing && line.startsWith("## ") && !sections.some(s => line.startsWith(s))) { capturing = false; continue; }
+            if (capturing) extracted.push(line);
+          }
+          voiceText = extracted.join("\n").trim() || noFront.trim();
         }
         await saveVoice({ name, text: voiceText.trim() });
-        setShowVoicePanel(true);
+        setShowVoicePanel(false);
       };
 
       const exportVoice = () => {
@@ -1537,13 +1595,84 @@ Return ONLY valid JSON, no extra text:
                   )}
                 </div>
 
+                {/* Product selector */}
+                <div style={{ border: "1px solid #e8e4ff", borderRadius: 8, padding: "10px 12px", marginBottom: 12, background: "#fff" }}>
+                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: (products.length > 0 || showProductsPanel) ? 8 : 0 }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                      <span style={{ fontSize: 13 }}>🏷</span>
+                      <span style={{ fontSize: 12, fontWeight: 700, color: selectedProductId ? "#6d4aff" : "#888" }}>
+                        {selectedProductId ? (products.find(p => p.id === selectedProductId)?.name || "Product") : "Product"}
+                      </span>
+                      {selectedProductId && <span style={{ fontSize: 10, background: "#6d4aff", color: "#fff", borderRadius: 10, padding: "2px 7px", fontWeight: 700 }}>Active</span>}
+                    </div>
+                    <div style={{ display: "flex", gap: 6 }}>
+                      {selectedProductId && !showProductsPanel && (
+                        <button onClick={() => { setEditingProduct(products.find(p => p.id === selectedProductId) || null); setShowProductsPanel(true); }} style={{ background: "none", border: "none", color: "#6d4aff", fontSize: 11, fontWeight: 600, cursor: "pointer", padding: "2px 4px" }}>Edit</button>
+                      )}
+                      {!showProductsPanel && (
+                        <button onClick={() => { setEditingProduct({ id: "", name: "", description: "" }); setShowProductsPanel(true); }} style={{ background: "none", border: "none", color: "#6d4aff", fontSize: 11, fontWeight: 600, cursor: "pointer", padding: "2px 4px" }}>+ Add</button>
+                      )}
+                      {showProductsPanel && (
+                        <button onClick={() => { setShowProductsPanel(false); setEditingProduct(null); }} style={{ background: "none", border: "none", color: "#888", fontSize: 11, fontWeight: 600, cursor: "pointer", padding: "2px 4px" }}>Cancel</button>
+                      )}
+                    </div>
+                  </div>
+
+                  {!showProductsPanel && products.length === 0 && (
+                    <div style={{ fontSize: 12, color: "#aaa", lineHeight: 1.4 }}>Optional — add a product so Claude knows exactly what you're advertising.</div>
+                  )}
+
+                  {!showProductsPanel && products.length > 0 && (
+                    <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                      {products.map(p => (
+                        <button key={p.id} onClick={() => setSelectedProductId(p.id === selectedProductId ? "" : p.id)}
+                          style={{ background: selectedProductId === p.id ? "#6d4aff" : "#f0eeff", color: selectedProductId === p.id ? "#fff" : "#6d4aff", border: `1px solid ${selectedProductId === p.id ? "#6d4aff" : "#d4c8ff"}`, borderRadius: 20, padding: "5px 12px", fontSize: 12, fontWeight: 600, cursor: "pointer", transition: "all .15s" }}>
+                          {p.name}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+
+                  {showProductsPanel && editingProduct !== null && (
+                    <div>
+                      <input
+                        value={editingProduct.name}
+                        onChange={e => setEditingProduct(p => ({ ...p, name: e.target.value }))}
+                        placeholder="Product name (e.g. RapidGrade)"
+                        style={{ ...I, fontSize: 13, marginBottom: 8 }}
+                      />
+                      <textarea
+                        value={editingProduct.description}
+                        onChange={e => setEditingProduct(p => ({ ...p, description: e.target.value }))}
+                        placeholder={"What it does, who it's for, key offer or benefit...\n\nExample:\nReview & reputation management for local businesses. Helps get more 5-star Google reviews on autopilot. Targets business owners tired of losing customers to competitors with better ratings."}
+                        rows={4}
+                        style={{ ...I, fontSize: 13, lineHeight: 1.6 }}
+                      />
+                      <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
+                        <button onClick={() => upsertProduct(editingProduct)} disabled={!editingProduct.name.trim()} style={{ flex: 1, background: editingProduct.name.trim() ? "#6d4aff" : "#e8e4ff", color: editingProduct.name.trim() ? "#fff" : "#b0a0ff", border: "none", borderRadius: 7, padding: "8px 0", fontSize: 13, fontWeight: 700, cursor: editingProduct.name.trim() ? "pointer" : "default" }}>Save</button>
+                        {editingProduct.id && (
+                          <button onClick={() => deleteProduct(editingProduct.id)} style={{ background: "none", border: "1px solid #ffcdd2", color: "#d70015", borderRadius: 7, padding: "8px 14px", fontSize: 13, fontWeight: 600, cursor: "pointer" }}>Delete</button>
+                        )}
+                      </div>
+                    </div>
+                  )}
+                </div>
+
                 {/* Generate button */}
                 <button
                   onClick={generateCopy}
                   disabled={!anthropicKey || aiLoading}
                   style={{ width: "100%", background: aiLoading ? "#e0e0e0" : !anthropicKey ? "#e8e4ff" : "#6d4aff", color: aiLoading ? "#aaa" : !anthropicKey ? "#b0a0ff" : "#fff", border: "none", borderRadius: 8, padding: "11px 0", fontSize: 14, fontWeight: 700, cursor: (!anthropicKey || aiLoading) ? "default" : "pointer", transition: "all .2s" }}
                 >
-                  {aiLoading ? "Generating…" : !anthropicKey ? "Add API key to generate" : brandVoice.text ? "✨ Generate with Brand Voice" : "✨ Generate Copy"}
+                  {aiLoading ? "Generating…" : !anthropicKey ? "Add API key to generate"
+                    : (() => {
+                        const p = products.find(p => p.id === selectedProductId);
+                        if (p && brandVoice.text) return `✨ Generate for ${p.name} + Voice`;
+                        if (p) return `✨ Generate for ${p.name}`;
+                        if (brandVoice.text) return "✨ Generate with Brand Voice";
+                        return "✨ Generate Copy";
+                      })()
+                  }
                 </button>
 
                 {aiError && (
