@@ -67,13 +67,14 @@
     const SUPA_URL = "https://rynuefnfmsfhccvyxtta.supabase.co";
     const SUPA_KEY = "sb_publishable_0__wCuDt6NLtAOIdTYKaWg_BJD9-mGC";
     const supaHdr  = { "apikey": SUPA_KEY, "Authorization": `Bearer ${SUPA_KEY}`, "Content-Type": "application/json" };
+    const AI_PROXY_URL = window.RG_AI_PROXY_URL || "";
 
-    const pushShare = async (adState, brandState) => {
+    const pushShare = async (adState, brandState, viewState = {}) => {
       const id = Math.random().toString(36).slice(2, 9);
       const res = await fetch(`${SUPA_URL}/rest/v1/ad_shares`, {
         method: "POST",
         headers: { ...supaHdr, "Prefer": "return=minimal" },
-        body: JSON.stringify({ id, data: { ad: adState, brand: brandState } }),
+        body: JSON.stringify({ id, data: { ad: adState, brand: brandState, view: viewState } }),
       });
       if (!res.ok) throw new Error(`${res.status}`);
       return id;
@@ -85,6 +86,19 @@
       const rows = await res.json();
       if (!rows.length) throw new Error("not found");
       return rows[0].data;
+    };
+
+    const callAIProxy = async ({ prompt, maxTokens }) => {
+      if (!AI_PROXY_URL) throw new Error("AI proxy is not configured.");
+      const res = await fetch(AI_PROXY_URL, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ prompt, maxTokens }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || `API error ${res.status}`);
+      if (!data.text) throw new Error("Invalid response format");
+      return data.text;
     };
 
     const LIMITS = {
@@ -140,6 +154,12 @@
       if (!text) return "";
       return text.length > n ? text.slice(0, n) : text;
     };
+    const getPreviewImage = (ad) => {
+      if (ad.image) return ad.image;
+      if (ad.adType !== "carousel") return null;
+      return (ad.carouselCards || []).find(card => card.image)?.image || null;
+    };
+    const hasCreativeImage = (ad) => !!getPreviewImage(ad);
     const cc = (count, rec, max) =>
       count > max ? "#d70015" : count > rec ? "#f2a200" : "#34c759";
 
@@ -344,8 +364,8 @@
 
         {/* Background creative */}
         <div style={{ position: "absolute", inset: 0 }}>
-          {ad.image
-            ? <img src={ad.image} style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} alt="Ad" />
+          {getPreviewImage(ad)
+            ? <img src={getPreviewImage(ad)} style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} alt="Ad" />
             : <div style={{ width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center", color: "#555", fontSize: 14 }}>No image</div>}
         </div>
 
@@ -414,8 +434,8 @@
 
         {/* Creative */}
         <div style={{ position: "absolute", inset: 0 }}>
-          {ad.image
-            ? <img src={ad.image} style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} alt="Ad" />
+          {getPreviewImage(ad)
+            ? <img src={getPreviewImage(ad)} style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} alt="Ad" />
             : <div style={{ width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center", color: "#444", fontSize: 14 }}>No image</div>}
         </div>
 
@@ -539,8 +559,8 @@
           </div>
         )}
         <div style={{ width: "100%", aspectRatio: "1/1", background: "#f0f2f5" }}>
-          {ad.image
-            ? <img src={ad.image} style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} alt="Ad" />
+          {getPreviewImage(ad)
+            ? <img src={getPreviewImage(ad)} style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} alt="Ad" />
             : <div style={{ width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center", color: "#bcc0c4", fontSize: 14 }}>No image</div>}
         </div>
         {ad.cta !== "No Button" && (
@@ -638,8 +658,8 @@
                   </div>
                 )}
                 <div style={{ width: "100%", aspectRatio: "1.91/1", background: "#f0f2f5", marginTop: 12 }}>
-                  {ad.image
-                    ? <img src={ad.image} style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} alt="Ad" />
+                  {getPreviewImage(ad)
+                    ? <img src={getPreviewImage(ad)} style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} alt="Ad" />
                     : <div style={{ width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center", color: "#bcc0c4", fontSize: 14 }}>No image</div>}
                 </div>
                 <div style={{ padding: "8px 16px", borderTop: "1px solid #e5e7eb", borderBottom: "1px solid #e5e7eb", fontSize: 13, color: "#65676b", display: "flex", justifyContent: "space-between" }}>
@@ -750,9 +770,6 @@
       const [exportingPNG, setExportingPNG] = useState(false);
       const [shareMsg, setShareMsg]        = useState("");
       const [isSharedView] = useState(() => !!new URLSearchParams(window.location.search).get("share"));
-      const [anthropicKey, setAnthropicKey] = useState(() => localStorage.getItem("rg-anthropic-key") || "");
-      const [showKey, setShowKey]           = useState(false);
-      const [showAIPanel, setShowAIPanel]   = useState(false);
       const [aiLoading, setAiLoading]       = useState(false);
       const [aiError, setAiError]           = useState("");
       const [aiSuggestions, setAiSuggestions] = useState(null);
@@ -772,6 +789,7 @@
       const fileRef = useRef();
       const previewRef = useRef();
       const voiceFileRef = useRef();
+      const aiReady = !!AI_PROXY_URL;
 
       useEffect(() => {
         (async () => {
@@ -803,9 +821,10 @@
           const shareId = new URLSearchParams(window.location.search).get("share");
           if (shareId) {
             try {
-              const { ad: sharedAd, brand: sharedBrand } = await fetchShare(shareId);
+              const { ad: sharedAd, brand: sharedBrand, view: sharedView } = await fetchShare(shareId);
               if (sharedAd)    setAd(sharedAd);
               if (sharedBrand) setBrand(b => ({ ...b, ...sharedBrand }));
+              if (sharedView?.placement && PLACEMENTS.some(p => p.id === sharedView.placement)) setPlacement(sharedView.placement);
             } catch(e) {}
           }
         })();
@@ -849,7 +868,7 @@
       const doShare = async () => {
         setShareMsg("Sharing…");
         try {
-          const id  = await pushShare(ad, brand);
+          const id  = await pushShare(ad, brand, { placement });
           const url = `${window.location.href.split("?")[0]}?share=${id}`;
           await navigator.clipboard.writeText(url);
           setShareMsg("Link copied! ✓");
@@ -917,7 +936,7 @@
         try {
           await storage.set(`rg-ad:${id}`, JSON.stringify(data));
           let idx = [...saved];
-          const entry = { id, name: ad.name || "Untitled", headline: ad.headline, hasImage: !!ad.image, savedAt: data.savedAt };
+          const entry = { id, name: ad.name || "Untitled", headline: ad.headline, hasImage: hasCreativeImage(ad), savedAt: data.savedAt };
           const pos = idx.findIndex(a => a.id === id);
           if (pos >= 0) idx[pos] = entry; else idx.unshift(entry);
           await storage.set("rg-ads-index", JSON.stringify(idx));
@@ -945,7 +964,7 @@
       };
 
       const generateCopy = async () => {
-        if (!anthropicKey) return;
+        if (!aiReady) return;
         setAiLoading(true);
         setAiError("");
         setAiSuggestions(null);
@@ -982,26 +1001,7 @@ ${selectedProduct ? `- Specific to ${selectedProduct.name} — keep it relevant`
 Return ONLY valid JSON, no extra text:
 {"headlines":["h1","h2","h3"],"primaryTexts":["t1","t2","t3"]}`;
         try {
-          const res = await fetch("https://api.anthropic.com/v1/messages", {
-            method: "POST",
-            headers: {
-              "x-api-key": anthropicKey,
-              "anthropic-version": "2023-06-01",
-              "anthropic-dangerous-direct-browser-access": "true",
-              "Content-Type": "application/json",
-            },
-            body: JSON.stringify({
-              model: "claude-opus-4-7",
-              max_tokens: 1024,
-              messages: [{ role: "user", content: prompt }],
-            }),
-          });
-          if (!res.ok) {
-            const err = await res.json().catch(() => ({}));
-            throw new Error(err.error?.message || `API error ${res.status}`);
-          }
-          const data = await res.json();
-          const text = data.content[0].text;
+          const text = await callAIProxy({ prompt, maxTokens: 1024 });
           const match = text.match(/\{[\s\S]*\}/);
           if (!match) throw new Error("Invalid response format");
           const suggestions = JSON.parse(match[0]);
@@ -1024,7 +1024,7 @@ Return ONLY valid JSON, no extra text:
       };
 
       const regenerateSingle = async (type, index) => {
-        if (!anthropicKey) return;
+        if (!aiReady) return;
         const key = `${type[0]}_${index}`;
         setRegenLoading(key);
         const existing = type === "headline" ? aiSuggestions.headlines : aiSuggestions.primaryTexts;
@@ -1041,14 +1041,8 @@ Requirement: ${limit}
 NEVER use em dashes (—) or en dashes (–). Use a period or comma instead.
 Return ONLY valid JSON: {"${type}": "the new variant here"}`;
         try {
-          const res = await fetch("https://api.anthropic.com/v1/messages", {
-            method: "POST",
-            headers: { "x-api-key": anthropicKey, "anthropic-version": "2023-06-01", "anthropic-dangerous-direct-browser-access": "true", "Content-Type": "application/json" },
-            body: JSON.stringify({ model: "claude-opus-4-7", max_tokens: 256, messages: [{ role: "user", content: prompt }] }),
-          });
-          if (!res.ok) throw new Error(`${res.status}`);
-          const data = await res.json();
-          const match = data.content[0].text.match(/\{[\s\S]*\}/);
+          const text = await callAIProxy({ prompt, maxTokens: 256 });
+          const match = text.match(/\{[\s\S]*\}/);
           if (match) {
             const result = JSON.parse(match[0]);
             const raw = result[type] || result.headline || result.primaryText || "";
@@ -1165,11 +1159,11 @@ Return ONLY valid JSON: {"${type}": "the new variant here"}`;
         URL.revokeObjectURL(url);
       };
 
-      const doExport = () => {
-        const allAds = saved.map(s => {
-          const item = localStorage.getItem(`rg-ad:${s.id}`);
-          return item ? JSON.parse(item) : null;
-        }).filter(Boolean);
+      const doExport = async () => {
+        const allAds = (await Promise.all(saved.map(async s => {
+          const item = await storage.get(`rg-ad:${s.id}`);
+          return item ? JSON.parse(item.value) : null;
+        }))).filter(Boolean);
         const backup = { exported: new Date().toISOString(), ads: allAds };
         const json = JSON.stringify(backup, null, 2);
         const blob = new Blob([json], { type: "application/json" });
@@ -1589,31 +1583,11 @@ Return ONLY valid JSON: {"${type}": "the new variant here"}`;
                 {/* Header row */}
                 <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
                   <div style={{ fontSize: 11, fontWeight: 700, color: "#6d4aff", textTransform: "uppercase", letterSpacing: "0.06em" }}>✨ AI Copy</div>
-                  {anthropicKey && (
-                    <button onClick={() => setShowAIPanel(p => !p)} style={{ background: "none", border: "none", color: "#6d4aff", fontSize: 12, fontWeight: 600, cursor: "pointer", padding: "2px 6px" }}>
-                      {showAIPanel ? "Hide Key" : "Edit Key"}
-                    </button>
-                  )}
                 </div>
 
-                {/* API Key — always visible when no key, toggleable when key exists */}
-                {(!anthropicKey || showAIPanel) && (
-                  <div style={{ marginBottom: 12 }}>
-                    <label style={{ ...L, color: "#888", marginBottom: 4 }}>Anthropic API Key</label>
-                    <div style={{ position: "relative" }}>
-                      <input
-                        type={showKey ? "text" : "password"}
-                        value={anthropicKey}
-                        onChange={e => { setAnthropicKey(e.target.value); localStorage.setItem("rg-anthropic-key", e.target.value); }}
-                        placeholder="sk-ant-api03-..."
-                        style={{ ...I, fontSize: 13, paddingRight: 40 }}
-                        autoComplete="off"
-                      />
-                      <button onClick={() => setShowKey(p => !p)} style={{ position: "absolute", right: 10, top: "50%", transform: "translateY(-50%)", background: "none", border: "none", cursor: "pointer", color: "#aaa", fontSize: 14, lineHeight: 1 }}>
-                        {showKey ? "🙈" : "👁"}
-                      </button>
-                    </div>
-                    <div style={{ fontSize: 11, color: "#aaa", marginTop: 4 }}>Stored in your browser only. Get yours at console.anthropic.com → API Keys.</div>
+                {!aiReady && (
+                  <div style={{ fontSize: 12, color: "#8a6d00", marginBottom: 12, padding: "8px 10px", background: "#fff7d6", border: "1px solid #f4d35e", borderRadius: 6 }}>
+                    AI proxy not configured.
                   </div>
                 )}
 
@@ -1784,10 +1758,10 @@ Return ONLY valid JSON: {"${type}": "the new variant here"}`;
                 {/* Generate button */}
                 <button
                   onClick={generateCopy}
-                  disabled={!anthropicKey || aiLoading}
-                  style={{ width: "100%", background: aiLoading ? "#e0e0e0" : !anthropicKey ? "#e8e4ff" : "#6d4aff", color: aiLoading ? "#aaa" : !anthropicKey ? "#b0a0ff" : "#fff", border: "none", borderRadius: 8, padding: "11px 0", fontSize: 14, fontWeight: 700, cursor: (!anthropicKey || aiLoading) ? "default" : "pointer", transition: "all .2s" }}
+                  disabled={!aiReady || aiLoading}
+                  style={{ width: "100%", background: aiLoading ? "#e0e0e0" : !aiReady ? "#e8e4ff" : "#6d4aff", color: aiLoading ? "#aaa" : !aiReady ? "#b0a0ff" : "#fff", border: "none", borderRadius: 8, padding: "11px 0", fontSize: 14, fontWeight: 700, cursor: (!aiReady || aiLoading) ? "default" : "pointer", transition: "all .2s" }}
                 >
-                  {aiLoading ? "Generating…" : !anthropicKey ? "Add API key to generate"
+                  {aiLoading ? "Generating…" : !aiReady ? "AI unavailable"
                     : (() => {
                         const p = products.find(p => p.id === selectedProductId);
                         const tone = AI_TONES.find(t => t.id === aiTone);
