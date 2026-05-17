@@ -748,8 +748,12 @@
       const [aiLoading, setAiLoading]       = useState(false);
       const [aiError, setAiError]           = useState("");
       const [aiSuggestions, setAiSuggestions] = useState(null);
+      const [brandVoice, setBrandVoice]     = useState({ name: "", text: "" });
+      const [showVoicePanel, setShowVoicePanel] = useState(false);
+      const [voiceDragging, setVoiceDragging]   = useState(false);
       const fileRef = useRef();
       const previewRef = useRef();
+      const voiceFileRef = useRef();
 
       useEffect(() => {
         (async () => {
@@ -760,6 +764,10 @@
           try {
             const b = await storage.get("rg-brand-settings");
             if (b) setBrand({ ...DEFAULT_BRAND, ...JSON.parse(b.value) });
+          } catch(e) {}
+          try {
+            const v = await storage.get("rg-brand-voice");
+            if (v) setBrandVoice(JSON.parse(v.value));
           } catch(e) {}
           // Load shared ad from URL ?share=<id>
           const shareId = new URLSearchParams(window.location.search).get("share");
@@ -918,11 +926,14 @@
           ad.primaryText   && `Current primary text: ${ad.primaryText}`,
           ad.headline      && `Current headline: ${ad.headline}`,
         ].filter(Boolean).join("\n");
+        const voiceSection = brandVoice.text
+          ? `\nBRAND VOICE (follow this tone and style strictly):\n${brandVoice.text}\n`
+          : "";
         const prompt = `You are a Meta ads copywriter. Generate 3 headline variants and 3 primary text variants for a Meta (Facebook/Instagram) ad.
 
 Context:
 ${context || "No context provided — write general high-converting copy."}
-
+${voiceSection}
 REQUIREMENTS:
 - Headlines: ≤27 chars ideally, hard max 40 chars
 - Primary text: ≤125 chars ideally, hard max 500 chars
@@ -961,6 +972,40 @@ Return ONLY valid JSON, no extra text:
           setAiError(e.message || "Something went wrong");
         }
         setAiLoading(false);
+      };
+
+      const saveVoice = async (next) => {
+        setBrandVoice(next);
+        await storage.set("rg-brand-voice", JSON.stringify(next)).catch(() => {});
+      };
+
+      const loadVoiceFile = async (file) => {
+        if (!file) return;
+        const text = await file.text();
+        let name = file.name.replace(/\.[^.]+$/, "");
+        let voiceText = text;
+        if (file.name.endsWith(".json")) {
+          try {
+            const parsed = JSON.parse(text);
+            if (parsed.type === "rg-brand-voice") {
+              voiceText = parsed.voice || "";
+              name = parsed.name || name;
+            }
+          } catch(e) {}
+        }
+        await saveVoice({ name, text: voiceText.trim() });
+        setShowVoicePanel(true);
+      };
+
+      const exportVoice = () => {
+        const payload = { type: "rg-brand-voice", version: 1, name: brandVoice.name, voice: brandVoice.text, exportedAt: new Date().toISOString() };
+        const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = `${(brandVoice.name || "brand-voice").replace(/\s+/g, "-").toLowerCase()}.json`;
+        a.click();
+        URL.revokeObjectURL(url);
       };
 
       const doExport = () => {
@@ -1383,15 +1428,18 @@ Return ONLY valid JSON, no extra text:
 
               {/* ── AI Copy Suggestions ── */}
               <div style={{ border: "1px solid #e0d9ff", borderRadius: 10, padding: "14px", background: "#faf8ff" }}>
-                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
+
+                {/* Header row */}
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
                   <div style={{ fontSize: 11, fontWeight: 700, color: "#6d4aff", textTransform: "uppercase", letterSpacing: "0.06em" }}>✨ AI Copy</div>
                   <button onClick={() => setShowAIPanel(p => !p)} style={{ background: "none", border: "none", color: "#6d4aff", fontSize: 12, fontWeight: 600, cursor: "pointer", padding: "2px 6px" }}>
                     {showAIPanel ? "Hide" : (anthropicKey ? "Edit Key" : "Setup")}
                   </button>
                 </div>
 
+                {/* API Key */}
                 {showAIPanel && (
-                  <div style={{ marginBottom: 10 }}>
+                  <div style={{ marginBottom: 12 }}>
                     <label style={{ ...L, color: "#888", marginBottom: 4 }}>Anthropic API Key</label>
                     <div style={{ position: "relative" }}>
                       <input
@@ -1409,12 +1457,90 @@ Return ONLY valid JSON, no extra text:
                   </div>
                 )}
 
+                {/* Brand Voice section */}
+                <div style={{ border: `1px solid ${brandVoice.text ? "#c4b5fd" : "#e8e4ff"}`, borderRadius: 8, padding: "10px 12px", marginBottom: 12, background: brandVoice.text ? "#f5f0ff" : "#fff" }}
+                  onDragOver={e => { e.preventDefault(); setVoiceDragging(true); }}
+                  onDragLeave={() => setVoiceDragging(false)}
+                  onDrop={e => { e.preventDefault(); setVoiceDragging(false); loadVoiceFile(e.dataTransfer.files[0]); }}
+                >
+                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: brandVoice.text || showVoicePanel ? 8 : 0 }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                      <span style={{ fontSize: 13 }}>🎙</span>
+                      <span style={{ fontSize: 12, fontWeight: 700, color: brandVoice.text ? "#6d4aff" : "#888" }}>
+                        {brandVoice.text ? (brandVoice.name || "Brand Voice") : "Brand Voice"}
+                      </span>
+                      {brandVoice.text && (
+                        <span style={{ fontSize: 10, background: "#6d4aff", color: "#fff", borderRadius: 10, padding: "2px 7px", fontWeight: 700 }}>Active</span>
+                      )}
+                    </div>
+                    <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+                      {brandVoice.text && (
+                        <button onClick={exportVoice} title="Export as .json to share" style={{ background: "none", border: "none", color: "#6d4aff", fontSize: 11, fontWeight: 600, cursor: "pointer", padding: "2px 4px" }}>↓ Export</button>
+                      )}
+                      {brandVoice.text && (
+                        <button onClick={() => saveVoice({ name: "", text: "" })} title="Remove voice" style={{ background: "none", border: "none", color: "#bbb", fontSize: 13, cursor: "pointer", padding: "2px 4px", lineHeight: 1 }}>✕</button>
+                      )}
+                      <button onClick={() => setShowVoicePanel(p => !p)} style={{ background: "none", border: "none", color: "#888", fontSize: 11, fontWeight: 600, cursor: "pointer", padding: "2px 4px" }}>
+                        {showVoicePanel ? "Hide" : (brandVoice.text ? "Edit" : "Add")}
+                      </button>
+                    </div>
+                  </div>
+
+                  {!brandVoice.text && !showVoicePanel && (
+                    <div style={{ fontSize: 12, color: "#aaa", lineHeight: 1.4 }}>
+                      Optional — paste or import a brand voice to make copy sound like you.
+                      <br />Drop a <strong>.txt</strong> or <strong>.json</strong> file here to import.
+                    </div>
+                  )}
+
+                  {voiceDragging && (
+                    <div style={{ fontSize: 12, color: "#6d4aff", fontWeight: 600, textAlign: "center", padding: "8px 0" }}>Drop to import voice file</div>
+                  )}
+
+                  {showVoicePanel && (
+                    <div>
+                      <input
+                        value={brandVoice.name}
+                        onChange={e => saveVoice({ ...brandVoice, name: e.target.value })}
+                        placeholder="Voice name (e.g. Qazi's Brand Voice)"
+                        style={{ ...I, fontSize: 13, marginBottom: 8 }}
+                      />
+                      <textarea
+                        value={brandVoice.text}
+                        onChange={e => saveVoice({ ...brandVoice, text: e.target.value })}
+                        placeholder={"Describe tone, style, do's & don'ts...\n\nExample:\n— Confident, direct, no fluff\n— Use 'you' not 'our customers'\n— Short punchy sentences\n— Never use exclamation marks\n— Speaks to busy entrepreneurs"}
+                        rows={7}
+                        style={{ ...I, fontSize: 13, lineHeight: 1.6 }}
+                      />
+                      <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
+                        <button onClick={() => voiceFileRef.current?.click()} style={{ flex: 1, background: "#f0eeff", color: "#6d4aff", border: "1px solid #d4c8ff", borderRadius: 7, padding: "8px 0", fontSize: 12, fontWeight: 600, cursor: "pointer" }}>
+                          ↑ Import file
+                        </button>
+                        {brandVoice.text && (
+                          <button onClick={exportVoice} style={{ flex: 1, background: "#f0eeff", color: "#6d4aff", border: "1px solid #d4c8ff", borderRadius: 7, padding: "8px 0", fontSize: 12, fontWeight: 600, cursor: "pointer" }}>
+                            ↓ Export .json
+                          </button>
+                        )}
+                      </div>
+                      <input ref={voiceFileRef} type="file" accept=".txt,.json" style={{ display: "none" }} onChange={e => { loadVoiceFile(e.target.files[0]); e.target.value = ""; }} />
+                      <div style={{ fontSize: 11, color: "#aaa", marginTop: 6 }}>Share the exported .json with anyone — they can import it in their copy of this tool.</div>
+                    </div>
+                  )}
+
+                  {brandVoice.text && !showVoicePanel && (
+                    <div style={{ fontSize: 12, color: "#6d4aff", lineHeight: 1.5, marginTop: 2, overflow: "hidden", display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical" }}>
+                      {brandVoice.text}
+                    </div>
+                  )}
+                </div>
+
+                {/* Generate button */}
                 <button
                   onClick={generateCopy}
                   disabled={!anthropicKey || aiLoading}
                   style={{ width: "100%", background: aiLoading ? "#e0e0e0" : !anthropicKey ? "#e8e4ff" : "#6d4aff", color: aiLoading ? "#aaa" : !anthropicKey ? "#b0a0ff" : "#fff", border: "none", borderRadius: 8, padding: "11px 0", fontSize: 14, fontWeight: 700, cursor: (!anthropicKey || aiLoading) ? "default" : "pointer", transition: "all .2s" }}
                 >
-                  {aiLoading ? "Generating…" : !anthropicKey ? "Add API key to generate" : "✨ Generate Copy"}
+                  {aiLoading ? "Generating…" : !anthropicKey ? "Add API key to generate" : brandVoice.text ? "✨ Generate with Brand Voice" : "✨ Generate Copy"}
                 </button>
 
                 {aiError && (
@@ -1423,7 +1549,6 @@ Return ONLY valid JSON, no extra text:
 
                 {aiSuggestions && (
                   <div style={{ marginTop: 14 }}>
-                    {/* Headlines */}
                     <div style={{ fontSize: 11, fontWeight: 700, color: "#888", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 8 }}>Headlines</div>
                     <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 14 }}>
                       {aiSuggestions.headlines.map((h, i) => (
@@ -1432,12 +1557,11 @@ Return ONLY valid JSON, no extra text:
                             <span style={{ flex: 1, fontSize: 13, color: "#1d1d1f", lineHeight: 1.4 }}>{h}</span>
                             <span style={{ fontSize: 11, fontFamily: "monospace", fontWeight: 700, color: cc(h.length, 27, 40), flexShrink: 0 }}>{h.length}/40</span>
                           </div>
-                          <button onClick={() => { upd("headline", h.slice(0, 40)); }} style={{ background: "#6d4aff", color: "#fff", border: "none", borderRadius: 6, padding: "5px 12px", fontSize: 12, fontWeight: 600, cursor: "pointer" }}>Use</button>
+                          <button onClick={() => upd("headline", h.slice(0, 40))} style={{ background: "#6d4aff", color: "#fff", border: "none", borderRadius: 6, padding: "5px 12px", fontSize: 12, fontWeight: 600, cursor: "pointer" }}>Use</button>
                         </div>
                       ))}
                     </div>
 
-                    {/* Primary Texts */}
                     <div style={{ fontSize: 11, fontWeight: 700, color: "#888", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 8 }}>Primary Text</div>
                     <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
                       {aiSuggestions.primaryTexts.map((t, i) => (
