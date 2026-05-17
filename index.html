@@ -765,6 +765,7 @@
       const [mockupMode, setMockupMode]  = useState("phone");
       const [carouselEditIdx, setCarouselEditIdx] = useState(0);
       const [isMobile, setIsMobile] = useState(() => window.innerWidth < 768);
+      const [isReviewCompact, setIsReviewCompact] = useState(() => window.innerWidth < 980);
       const [mobileTab, setMobileTab] = useState("edit");
       const [brand, setBrand] = useState({ ...DEFAULT_BRAND });
       const [exportingPNG, setExportingPNG] = useState(false);
@@ -787,6 +788,8 @@
       const [regenLoading, setRegenLoading]   = useState("");
       const [exportCopyMsg, setExportCopyMsg] = useState("");
       const [darkMode, setDarkMode] = useState(() => localStorage.getItem("rg-theme") === "dark");
+      const [reviewNote, setReviewNote] = useState("");
+      const [reviewMsg, setReviewMsg] = useState("");
       const fileRef = useRef();
       const previewRef = useRef();
       const voiceFileRef = useRef();
@@ -864,7 +867,10 @@
       }, []);
 
       useEffect(() => {
-        const check = () => setIsMobile(window.innerWidth < 768);
+        const check = () => {
+          setIsMobile(window.innerWidth < 768);
+          setIsReviewCompact(window.innerWidth < 980);
+        };
         window.addEventListener("resize", check);
         return () => window.removeEventListener("resize", check);
       }, []);
@@ -1120,6 +1126,37 @@ Return ONLY valid JSON: {"${type}": "the new variant here"}`;
         setTimeout(() => setExportCopyMsg(""), 2500);
       };
 
+      const getAdBriefLines = () => {
+        const placementLabel = PLACEMENTS.find(p => p.id === placement)?.label || placement;
+        return [
+          `Ad: ${ad.name || "Untitled"}`,
+          `Brand: ${brand.displayName || brand.name || "RapidGrade"}`,
+          `Placement: ${placementLabel}`,
+          ad.headline && `Headline: ${ad.headline}`,
+          ad.primaryText && `Primary text: ${ad.primaryText}`,
+          ad.description && `Description: ${ad.description}`,
+          ad.cta !== "No Button" && `CTA: ${ad.cta}`,
+          ad.destinationUrl && `URL: ${ad.destinationUrl}`,
+          ad.adType === "carousel" && `Format: Carousel (${(ad.carouselCards || []).length} cards)`,
+        ].filter(Boolean);
+      };
+
+      const copyReviewText = async (kind) => {
+        const brief = getAdBriefLines().join("\n");
+        const note = reviewNote.trim();
+        const status = kind === "approved" ? "Approved" : kind === "changes" ? "Needs changes" : "Ad brief";
+        const text = kind === "brief"
+          ? brief
+          : `${status}\n\n${brief}${note ? `\n\nNotes:\n${note}` : ""}`;
+        try {
+          await navigator.clipboard.writeText(text);
+          setReviewMsg(kind === "approved" ? "Approval copied" : kind === "changes" ? "Change note copied" : "Brief copied");
+        } catch(e) {
+          setReviewMsg("Could not copy");
+        }
+        setTimeout(() => setReviewMsg(""), 2500);
+      };
+
       const saveVoice = async (next) => {
         setBrandVoice(next);
         await storage.set("rg-brand-voice", JSON.stringify(next)).catch(() => {});
@@ -1241,6 +1278,8 @@ Return ONLY valid JSON: {"${type}": "the new variant here"}`;
 
       // ── SHARED / CLIENT VIEW ──────────────────────────────────────────────
       if (isSharedView) {
+        const placementLabel = PLACEMENTS.find(p => p.id === placement)?.label || "Preview";
+        const briefLines = getAdBriefLines();
         const sharedPreview = () => {
           const p = { ad, brand };
           let content;
@@ -1257,29 +1296,70 @@ Return ONLY valid JSON: {"${type}": "the new variant here"}`;
           return <PhoneFrame>{content}</PhoneFrame>;
         };
         return (
-          <div style={{ display: "flex", flexDirection: "column", height: "100vh", background: "#f5f5f7", fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif', overflow: "hidden" }}>
+          <div style={{ display: "flex", flexDirection: "column", minHeight: "100vh", background: "#f5f5f7", color: "#1d1d1f", fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif', overflow: "hidden" }}>
             {/* Header */}
-            <div style={{ flexShrink: 0, background: "rgba(255,255,255,0.9)", backdropFilter: "blur(10px)", borderBottom: "1px solid rgba(0,0,0,0.08)", padding: "14px 20px", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+            <div style={{ flexShrink: 0, background: "rgba(255,255,255,0.92)", backdropFilter: "blur(12px)", borderBottom: "1px solid rgba(0,0,0,0.08)", padding: isMobile ? "12px 14px" : "14px 22px", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 14 }}>
               <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                <div style={{ width: 30, height: 30, borderRadius: 7, background: "linear-gradient(135deg, #f59e0b, #d97706)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 15, fontWeight: 900, color: "#fff" }}>⚡</div>
+                <div style={{ width: 32, height: 32, borderRadius: 8, background: "linear-gradient(135deg, #f59e0b, #d97706)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 15, fontWeight: 900, color: "#fff", flexShrink: 0 }}>RG</div>
                 <div>
-                  <div style={{ fontWeight: 700, fontSize: 14, color: "#1d1d1f" }}>{ad.name || "Ad Preview"}</div>
-                  <div style={{ fontSize: 11, color: "#888" }}>Powered by RapidGrade</div>
+                  <div style={{ fontWeight: 800, fontSize: isMobile ? 14 : 15, color: "#1d1d1f", lineHeight: 1.2 }}>{ad.name || "Ad Preview"}</div>
+                  <div style={{ fontSize: 12, color: "#777", marginTop: 2 }}>{placementLabel} review</div>
                 </div>
               </div>
               {/* Placement tabs */}
-              <div style={{ display: "flex", gap: 6, flexWrap: "wrap", justifyContent: "flex-end" }}>
+              <div style={{ display: "flex", gap: 6, overflowX: "auto", justifyContent: "flex-end", paddingBottom: 1 }}>
                 {PLACEMENTS.map(pl => (
-                  <button key={pl.id} onClick={() => setPlacement(pl.id)} style={{ background: placement === pl.id ? "#1d1d1f" : "rgba(0,0,0,0.06)", color: placement === pl.id ? "#fff" : "#1d1d1f", border: "none", borderRadius: 20, padding: "5px 12px", fontSize: 12, fontWeight: 600, cursor: "pointer", transition: "all .15s" }}>
+                  <button key={pl.id} onClick={() => setPlacement(pl.id)} style={{ background: placement === pl.id ? "#1d1d1f" : "rgba(0,0,0,0.06)", color: placement === pl.id ? "#fff" : "#1d1d1f", border: "none", borderRadius: 20, padding: "6px 12px", fontSize: 12, fontWeight: 700, cursor: "pointer", transition: "all .15s", whiteSpace: "nowrap", flexShrink: 0 }}>
                     {pl.label}
                   </button>
                 ))}
               </div>
             </div>
             {/* Preview */}
-            <div style={{ flex: 1, overflow: "auto", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: isMobile ? "flex-start" : "center", padding: isMobile ? "0" : "32px 20px 40px" }}>
-              <div ref={previewRef}>
-                {sharedPreview()}
+            <div style={{ flex: 1, overflow: "auto", display: "grid", gridTemplateColumns: isReviewCompact ? "1fr" : "minmax(420px, 1fr) 340px", gap: isReviewCompact ? 0 : 28, alignItems: isReviewCompact ? "stretch" : "center", padding: isReviewCompact ? "0" : "32px 28px 40px" }}>
+              <div style={{ minHeight: isReviewCompact ? "auto" : "calc(100vh - 130px)", display: "flex", alignItems: isReviewCompact ? "flex-start" : "center", justifyContent: "center", overflow: "auto", padding: isReviewCompact && !isMobile ? "24px 0" : 0 }}>
+                <div ref={previewRef} style={{ display: "inline-flex" }}>
+                  {sharedPreview()}
+                </div>
+              </div>
+
+              <div style={{ background: "#fff", border: "1px solid rgba(0,0,0,0.08)", borderRadius: isMobile ? 0 : 12, boxShadow: isReviewCompact ? "none" : "0 12px 40px rgba(0,0,0,0.08)", padding: isMobile ? "18px 16px 20px" : 20, alignSelf: isReviewCompact ? "stretch" : "center", width: isReviewCompact ? "100%" : "auto", maxWidth: isReviewCompact ? 720 : "none", justifySelf: isReviewCompact ? "center" : "auto" }}>
+                <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 12, marginBottom: 16 }}>
+                  <div>
+                    <div style={{ fontSize: 11, fontWeight: 800, color: "#888", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 5 }}>Client Review</div>
+                    <div style={{ fontSize: 19, fontWeight: 800, color: "#1d1d1f", lineHeight: 1.2 }}>{ad.name || "Ad Preview"}</div>
+                  </div>
+                  <div style={{ background: "#f0fdf4", color: "#15803d", border: "1px solid #bbf7d0", borderRadius: 999, padding: "5px 10px", fontSize: 12, fontWeight: 800, whiteSpace: "nowrap" }}>Ready</div>
+                </div>
+
+                <div style={{ display: "flex", flexDirection: "column", gap: 9, marginBottom: 16 }}>
+                  {briefLines.map(line => {
+                    const [label, ...rest] = line.split(": ");
+                    return (
+                      <div key={line} style={{ display: "grid", gridTemplateColumns: "92px 1fr", gap: 10, fontSize: 13, lineHeight: 1.45 }}>
+                        <div style={{ color: "#888", fontWeight: 700 }}>{label}</div>
+                        <div style={{ color: "#1d1d1f", fontWeight: 600, overflowWrap: "anywhere" }}>{rest.join(": ")}</div>
+                      </div>
+                    );
+                  })}
+                </div>
+
+                <textarea
+                  value={reviewNote}
+                  onChange={e => setReviewNote(e.target.value)}
+                  placeholder="Optional review note..."
+                  rows={4}
+                  style={{ width: "100%", border: "1px solid #e0e0e0", borderRadius: 8, padding: "10px 12px", resize: "vertical", minHeight: 86, fontFamily: "inherit", fontSize: 13, lineHeight: 1.45, outline: "none", marginBottom: 10 }}
+                />
+
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+                  <button onClick={() => copyReviewText("approved")} style={{ background: "#16a34a", color: "#fff", border: "none", borderRadius: 8, padding: "10px 0", fontSize: 13, fontWeight: 800, cursor: "pointer" }}>Approve</button>
+                  <button onClick={() => copyReviewText("changes")} style={{ background: "#1d1d1f", color: "#fff", border: "none", borderRadius: 8, padding: "10px 0", fontSize: 13, fontWeight: 800, cursor: "pointer" }}>Needs Changes</button>
+                </div>
+                <button onClick={() => copyReviewText("brief")} style={{ width: "100%", marginTop: 8, background: "#f5f5f7", color: "#1d1d1f", border: "1px solid #e0e0e0", borderRadius: 8, padding: "10px 0", fontSize: 13, fontWeight: 800, cursor: "pointer" }}>
+                  {reviewMsg || "Copy Brief"}
+                </button>
+                <div style={{ marginTop: 12, fontSize: 11, color: "#999", lineHeight: 1.45 }}>Review actions copy a message to your clipboard so you can paste it into email, chat, or a task.</div>
               </div>
             </div>
           </div>
