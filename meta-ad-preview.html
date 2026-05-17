@@ -1432,13 +1432,15 @@ Return ONLY valid JSON, no extra text:
                 {/* Header row */}
                 <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
                   <div style={{ fontSize: 11, fontWeight: 700, color: "#6d4aff", textTransform: "uppercase", letterSpacing: "0.06em" }}>✨ AI Copy</div>
-                  <button onClick={() => setShowAIPanel(p => !p)} style={{ background: "none", border: "none", color: "#6d4aff", fontSize: 12, fontWeight: 600, cursor: "pointer", padding: "2px 6px" }}>
-                    {showAIPanel ? "Hide" : (anthropicKey ? "Edit Key" : "Setup")}
-                  </button>
+                  {anthropicKey && (
+                    <button onClick={() => setShowAIPanel(p => !p)} style={{ background: "none", border: "none", color: "#6d4aff", fontSize: 12, fontWeight: 600, cursor: "pointer", padding: "2px 6px" }}>
+                      {showAIPanel ? "Hide Key" : "Edit Key"}
+                    </button>
+                  )}
                 </div>
 
-                {/* API Key */}
-                {showAIPanel && (
+                {/* API Key — always visible when no key, toggleable when key exists */}
+                {(!anthropicKey || showAIPanel) && (
                   <div style={{ marginBottom: 12 }}>
                     <label style={{ ...L, color: "#888", marginBottom: 4 }}>Anthropic API Key</label>
                     <div style={{ position: "relative" }}>
@@ -1448,12 +1450,13 @@ Return ONLY valid JSON, no extra text:
                         onChange={e => { setAnthropicKey(e.target.value); localStorage.setItem("rg-anthropic-key", e.target.value); }}
                         placeholder="sk-ant-api03-..."
                         style={{ ...I, fontSize: 13, paddingRight: 40 }}
+                        autoComplete="off"
                       />
                       <button onClick={() => setShowKey(p => !p)} style={{ position: "absolute", right: 10, top: "50%", transform: "translateY(-50%)", background: "none", border: "none", cursor: "pointer", color: "#aaa", fontSize: 14, lineHeight: 1 }}>
                         {showKey ? "🙈" : "👁"}
                       </button>
                     </div>
-                    <div style={{ fontSize: 11, color: "#aaa", marginTop: 4 }}>Stored in your browser only — never sent anywhere except Anthropic.</div>
+                    <div style={{ fontSize: 11, color: "#aaa", marginTop: 4 }}>Stored in your browser only. Get yours at console.anthropic.com → API Keys.</div>
                   </div>
                 )}
 
