@@ -786,10 +786,43 @@
       const [showAiHistory, setShowAiHistory] = useState(false);
       const [regenLoading, setRegenLoading]   = useState("");
       const [exportCopyMsg, setExportCopyMsg] = useState("");
+      const [darkMode, setDarkMode] = useState(() => localStorage.getItem("rg-theme") === "dark");
       const fileRef = useRef();
       const previewRef = useRef();
       const voiceFileRef = useRef();
       const aiReady = !!AI_PROXY_URL;
+
+      const theme = darkMode ? {
+        appBg: "linear-gradient(135deg, #111318 0%, #191b22 100%)",
+        headerBg: "rgba(24,26,33,0.86)",
+        surface: "#181a21",
+        panel: "#20232c",
+        field: "#111318",
+        segment: "rgba(255,255,255,0.08)",
+        active: "#2c303b",
+        border: "rgba(255,255,255,0.12)",
+        softBorder: "rgba(255,255,255,0.08)",
+        text: "#f5f5f7",
+        muted: "#a4a8b3",
+        faint: "#737783",
+        shadow: "0 1px 3px rgba(0,0,0,0.28)",
+        previewBg: "linear-gradient(135deg, #161820 0%, #22252f 100%)",
+      } : {
+        appBg: "linear-gradient(135deg, #f5f5f7 0%, #ffffff 100%)",
+        headerBg: "rgba(255,255,255,0.8)",
+        surface: "#fff",
+        panel: "#fafafa",
+        field: "#fff",
+        segment: "rgba(0,0,0,0.05)",
+        active: "#fff",
+        border: "rgba(0,0,0,0.08)",
+        softBorder: "#e8e8e8",
+        text: "#1d1d1f",
+        muted: "#888",
+        faint: "#bbb",
+        shadow: "0 1px 3px rgba(0,0,0,0.08)",
+        previewBg: "linear-gradient(135deg, #f5f5f7 0%, #ffffff 100%)",
+      };
 
       useEffect(() => {
         (async () => {
@@ -835,6 +868,10 @@
         window.addEventListener("resize", check);
         return () => window.removeEventListener("resize", check);
       }, []);
+
+      useEffect(() => {
+        localStorage.setItem("rg-theme", darkMode ? "dark" : "light");
+      }, [darkMode]);
 
       const upd = useCallback((k, v) => setAd(p => ({ ...p, [k]: v })), []);
 
@@ -1194,8 +1231,8 @@ Return ONLY valid JSON: {"${type}": "the new variant here"}`;
         return <PhoneFrame>{content}</PhoneFrame>;
       };
 
-      const I = { width: "100%", background: "#fff", border: "1px solid #d0d0d0", borderRadius: 8, padding: "11px 14px", color: "#1d1d1f", fontSize: 14, fontFamily: "inherit", outline: "none", resize: "none", transition: "border-color .2s", fontWeight: "500" };
-      const L = { fontSize: 12, fontWeight: 600, color: "#1d1d1f", letterSpacing: "0.04em", textTransform: "uppercase", display: "block", marginBottom: 6 };
+      const I = { width: "100%", background: theme.field, border: `1px solid ${theme.border}`, borderRadius: 8, padding: "11px 14px", color: theme.text, fontSize: 14, fontFamily: "inherit", outline: "none", resize: "none", transition: "border-color .2s, background .2s, color .2s", fontWeight: "500" };
+      const L = { fontSize: 12, fontWeight: 600, color: theme.text, letterSpacing: "0.04em", textTransform: "uppercase", display: "block", marginBottom: 6 };
 
       const isCarousel  = ad.adType === "carousel";
       const carouselCards = ad.carouselCards || [];
@@ -1250,25 +1287,25 @@ Return ONLY valid JSON: {"${type}": "the new variant here"}`;
       }
 
       return (
-        <div style={{ display: "flex", flexDirection: "column", height: "100vh", background: "linear-gradient(135deg, #f5f5f7 0%, #ffffff 100%)", color: "#1d1d1f", fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif', overflow: "hidden" }}>
+        <div style={{ display: "flex", flexDirection: "column", height: "100vh", background: theme.appBg, color: theme.text, fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif', overflow: "hidden", transition: "background .2s, color .2s" }}>
           {/* ── HEADER ── */}
-          <div style={{ display: "flex", flexDirection: "column", flexShrink: 0, background: "rgba(255,255,255,0.8)", backdropFilter: "blur(10px)", borderBottom: "1px solid rgba(0,0,0,0.08)" }}>
+          <div style={{ display: "flex", flexDirection: "column", flexShrink: 0, background: theme.headerBg, backdropFilter: "blur(10px)", borderBottom: `1px solid ${theme.border}`, transition: "background .2s, border-color .2s" }}>
             <div style={{ height: isMobile ? 52 : 60, display: "flex", alignItems: "center", justifyContent: "space-between", padding: isMobile ? "0 16px" : "0 28px" }}>
               <div style={{ display: "flex", alignItems: "center", gap: isMobile ? 10 : 14 }}>
                 <div style={{ width: 32, height: 32, borderRadius: 8, background: "linear-gradient(135deg, #f59e0b, #d97706)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 16, fontWeight: 900, color: "#fff" }}>⚡</div>
                 <div>
-                  <div style={{ fontWeight: 700, fontSize: isMobile ? 14 : 16, letterSpacing: -0.5, color: "#1d1d1f" }}>Meta Ad Preview</div>
-                  {!isMobile && <div style={{ fontSize: 12, color: "#888", marginTop: 2 }}>RapidGrade</div>}
+                  <div style={{ fontWeight: 700, fontSize: isMobile ? 14 : 16, letterSpacing: -0.5, color: theme.text }}>Meta Ad Preview</div>
+                  {!isMobile && <div style={{ fontSize: 12, color: theme.muted, marginTop: 2 }}>RapidGrade</div>}
                 </div>
               </div>
               <div style={{ display: "flex", gap: isMobile ? 6 : 10, alignItems: "center" }}>
                 {!isMobile && (
-                  <button onClick={() => setShowLib(!showLib)} style={{ background: showLib ? "rgba(0,0,0,0.08)" : "transparent", color: "#1d1d1f", border: "none", borderRadius: 8, padding: "8px 16px", fontSize: 14, fontWeight: 600, cursor: "pointer", transition: "all .2s" }}>
+                  <button onClick={() => setShowLib(!showLib)} style={{ background: showLib ? theme.segment : "transparent", color: theme.text, border: "none", borderRadius: 8, padding: "8px 16px", fontSize: 14, fontWeight: 600, cursor: "pointer", transition: "all .2s" }}>
                     Library {saved.length > 0 && `(${saved.length})`}
                   </button>
                 )}
                 {!isMobile && (
-                  <button onClick={() => { setAd({ ...EMPTY }); setCarouselEditIdx(0); }} style={{ background: "transparent", color: "#1d1d1f", border: "none", borderRadius: 8, padding: "8px 16px", fontSize: 14, fontWeight: 600, cursor: "pointer" }}>
+                  <button onClick={() => { setAd({ ...EMPTY }); setCarouselEditIdx(0); }} style={{ background: "transparent", color: theme.text, border: "none", borderRadius: 8, padding: "8px 16px", fontSize: 14, fontWeight: 600, cursor: "pointer" }}>
                     + New
                   </button>
                 )}
@@ -1287,8 +1324,11 @@ Return ONLY valid JSON: {"${type}": "the new variant here"}`;
                     {shareMsg || "🔗 Share"}
                   </button>
                 )}
+                <button onClick={() => setDarkMode(p => !p)} title={darkMode ? "Switch to light appearance" : "Switch to dark appearance"} style={{ background: theme.segment, color: theme.text, border: `1px solid ${theme.border}`, borderRadius: 8, padding: isMobile ? "7px 10px" : "8px 14px", fontSize: isMobile ? 13 : 14, fontWeight: 700, cursor: "pointer", transition: "all .2s", minWidth: isMobile ? 44 : 86 }}>
+                  {darkMode ? "Light" : "Dark"}
+                </button>
                 {isMobile && (
-                  <button onClick={() => { setAd({ ...EMPTY }); setCarouselEditIdx(0); setMobileTab("edit"); }} style={{ background: "transparent", color: "#1d1d1f", border: "none", borderRadius: 8, padding: "6px 10px", fontSize: 13, fontWeight: 600, cursor: "pointer" }}>
+                  <button onClick={() => { setAd({ ...EMPTY }); setCarouselEditIdx(0); setMobileTab("edit"); }} style={{ background: "transparent", color: theme.text, border: "none", borderRadius: 8, padding: "6px 10px", fontSize: 13, fontWeight: 600, cursor: "pointer" }}>
                     + New
                   </button>
                 )}
@@ -1301,16 +1341,16 @@ Return ONLY valid JSON: {"${type}": "the new variant here"}`;
             {/* Desktop: mockup mode + placement tabs */}
             {!isMobile && (
               <div style={{ height: 50, display: "flex", alignItems: "center", gap: 16, padding: "0 28px" }}>
-                <div style={{ display: "flex", gap: 4, background: "rgba(0,0,0,0.05)", borderRadius: 8, padding: 3 }}>
-                  <button onClick={() => setMockupMode("phone")} style={{ background: mockupMode === "phone" ? "#fff" : "transparent", color: "#1d1d1f", border: "none", borderRadius: 6, padding: "6px 12px", fontSize: 12, fontWeight: 600, cursor: "pointer", transition: "all .2s", boxShadow: mockupMode === "phone" ? "0 1px 3px rgba(0,0,0,0.08)" : "none" }}>📱 Phone</button>
-                  <button onClick={() => setMockupMode("desktop")} style={{ background: mockupMode === "desktop" ? "#fff" : "transparent", color: "#1d1d1f", border: "none", borderRadius: 6, padding: "6px 12px", fontSize: 12, fontWeight: 600, cursor: "pointer", transition: "all .2s", boxShadow: mockupMode === "desktop" ? "0 1px 3px rgba(0,0,0,0.08)" : "none" }}>🖥️ Monitor</button>
+                <div style={{ display: "flex", gap: 4, background: theme.segment, borderRadius: 8, padding: 3 }}>
+                  <button onClick={() => setMockupMode("phone")} style={{ background: mockupMode === "phone" ? theme.active : "transparent", color: theme.text, border: "none", borderRadius: 6, padding: "6px 12px", fontSize: 12, fontWeight: 600, cursor: "pointer", transition: "all .2s", boxShadow: mockupMode === "phone" ? theme.shadow : "none" }}>📱 Phone</button>
+                  <button onClick={() => setMockupMode("desktop")} style={{ background: mockupMode === "desktop" ? theme.active : "transparent", color: theme.text, border: "none", borderRadius: 6, padding: "6px 12px", fontSize: 12, fontWeight: 600, cursor: "pointer", transition: "all .2s", boxShadow: mockupMode === "desktop" ? theme.shadow : "none" }}>🖥️ Monitor</button>
                 </div>
                 <div style={{ display: "flex", gap: 4 }}>
                   {PLACEMENTS.filter(p => {
                     if (mockupMode === "phone") return ["ig-feed", "ig-stories", "ig-reels", "fb-mobile"].includes(p.id);
                     else return ["ig-feed", "ig-stories", "ig-reels", "fb-desktop"].includes(p.id);
                   }).map(p => (
-                    <button key={p.id} onClick={() => setPlacement(p.id)} style={{ background: placement === p.id ? "#fff" : "transparent", color: "#1d1d1f", border: "none", borderRadius: 6, padding: "6px 12px", fontSize: 12, fontWeight: 600, cursor: "pointer", transition: "all .2s", boxShadow: placement === p.id ? "0 1px 3px rgba(0,0,0,0.08)" : "none" }}>{p.label}</button>
+                    <button key={p.id} onClick={() => setPlacement(p.id)} style={{ background: placement === p.id ? theme.active : "transparent", color: theme.text, border: "none", borderRadius: 6, padding: "6px 12px", fontSize: 12, fontWeight: 600, cursor: "pointer", transition: "all .2s", boxShadow: placement === p.id ? theme.shadow : "none" }}>{p.label}</button>
                   ))}
                 </div>
               </div>
@@ -1318,12 +1358,12 @@ Return ONLY valid JSON: {"${type}": "the new variant here"}`;
 
             {/* Mobile: Edit / Library / Preview tabs */}
             {isMobile && (
-              <div style={{ borderTop: "1px solid rgba(0,0,0,0.06)" }}>
+              <div style={{ borderTop: `1px solid ${theme.border}` }}>
                 {/* Main tabs row */}
                 <div style={{ display: "flex", padding: "8px 16px 0" }}>
-                  <div style={{ display: "flex", gap: 4, background: "rgba(0,0,0,0.05)", borderRadius: 8, padding: 3, width: "100%" }}>
+                  <div style={{ display: "flex", gap: 4, background: theme.segment, borderRadius: 8, padding: 3, width: "100%" }}>
                     {["edit", "library", "preview"].map(tab => (
-                      <button key={tab} onClick={() => setMobileTab(tab)} style={{ flex: 1, background: mobileTab === tab ? "#fff" : "transparent", color: "#1d1d1f", border: "none", borderRadius: 6, padding: "7px 4px", fontSize: 13, fontWeight: 600, cursor: "pointer", boxShadow: mobileTab === tab ? "0 1px 3px rgba(0,0,0,0.08)" : "none" }}>
+                      <button key={tab} onClick={() => setMobileTab(tab)} style={{ flex: 1, background: mobileTab === tab ? theme.active : "transparent", color: theme.text, border: "none", borderRadius: 6, padding: "7px 4px", fontSize: 13, fontWeight: 600, cursor: "pointer", boxShadow: mobileTab === tab ? theme.shadow : "none" }}>
                         {tab === "library" ? `Library${saved.length > 0 ? ` (${saved.length})` : ""}` : tab.charAt(0).toUpperCase() + tab.slice(1)}
                       </button>
                     ))}
@@ -1348,22 +1388,22 @@ Return ONLY valid JSON: {"${type}": "the new variant here"}`;
           <div style={{ display: "flex", flex: 1, overflow: "hidden" }}>
             {/* ── LIBRARY (mobile full-screen tab) ── */}
             {isMobile && mobileTab === "library" && (
-              <div style={{ flex: 1, overflowY: "auto", background: "#fff", padding: "20px" }}>
+              <div style={{ flex: 1, overflowY: "auto", background: theme.surface, padding: "20px" }}>
                 <div style={{ marginBottom: 16 }}>
-                  <div style={{ fontSize: 12, fontWeight: 700, color: "#1d1d1f", textTransform: "uppercase" }}>Saved Ads</div>
-                  <div style={{ fontSize: 13, color: "#888", marginTop: 4 }}>{saved.length} ad{saved.length !== 1 ? "s" : ""}</div>
+                  <div style={{ fontSize: 12, fontWeight: 700, color: theme.text, textTransform: "uppercase" }}>Saved Ads</div>
+                  <div style={{ fontSize: 13, color: theme.muted, marginTop: 4 }}>{saved.length} ad{saved.length !== 1 ? "s" : ""}</div>
                 </div>
                 <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                  {saved.length === 0 && <div style={{ color: "#bbb", fontSize: 13, textAlign: "center", padding: "40px 0" }}>No ads saved yet.</div>}
+                  {saved.length === 0 && <div style={{ color: theme.faint, fontSize: 13, textAlign: "center", padding: "40px 0" }}>No ads saved yet.</div>}
                   {saved.map(s => (
-                    <div key={s.id} onClick={() => { doLoad(s.id); setMobileTab("edit"); }} style={{ background: ad.id === s.id ? "#f5f5f7" : "transparent", border: `1px solid ${ad.id === s.id ? "#d0d0d0" : "#ebebeb"}`, borderRadius: 10, padding: "12px", cursor: "pointer", display: "flex", gap: 12, alignItems: "flex-start" }}>
-                      <div style={{ width: 44, height: 44, borderRadius: 8, background: "#f5f5f7", flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 20 }}>
+                    <div key={s.id} onClick={() => { doLoad(s.id); setMobileTab("edit"); }} style={{ background: ad.id === s.id ? theme.panel : "transparent", border: `1px solid ${ad.id === s.id ? theme.border : theme.softBorder}`, borderRadius: 10, padding: "12px", cursor: "pointer", display: "flex", gap: 12, alignItems: "flex-start" }}>
+                      <div style={{ width: 44, height: 44, borderRadius: 8, background: theme.panel, flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 20 }}>
                         {s.hasImage ? "🖼" : "📋"}
                       </div>
                       <div style={{ flex: 1, minWidth: 0 }}>
-                        <div style={{ fontSize: 14, fontWeight: 600, color: "#1d1d1f", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{s.name || "Untitled"}</div>
-                        <div style={{ fontSize: 12, color: "#888", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", marginTop: 2 }}>{s.headline || "No headline"}</div>
-                        <div style={{ fontSize: 11, color: "#bbb", marginTop: 4 }}>{new Date(s.savedAt).toLocaleDateString()}</div>
+                        <div style={{ fontSize: 14, fontWeight: 600, color: theme.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{s.name || "Untitled"}</div>
+                        <div style={{ fontSize: 12, color: theme.muted, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", marginTop: 2 }}>{s.headline || "No headline"}</div>
+                        <div style={{ fontSize: 11, color: theme.faint, marginTop: 4 }}>{new Date(s.savedAt).toLocaleDateString()}</div>
                       </div>
                       <button onClick={e => doDelete(s.id, e)} style={{ background: "none", border: "none", color: "#bbb", cursor: "pointer", fontSize: 18, padding: "4px", flexShrink: 0 }}>✕</button>
                     </div>
@@ -1377,22 +1417,22 @@ Return ONLY valid JSON: {"${type}": "the new variant here"}`;
 
             {/* ── LIBRARY (desktop sidebar) ── */}
             {!isMobile && showLib && (
-              <div style={{ width: 280, borderRight: "1px solid rgba(0,0,0,0.08)", overflowY: "auto", background: "#fff", flexShrink: 0, padding: "20px" }}>
+              <div style={{ width: 280, borderRight: `1px solid ${theme.border}`, overflowY: "auto", background: theme.surface, flexShrink: 0, padding: "20px" }}>
                 <div style={{ marginBottom: 16 }}>
-                  <div style={{ fontSize: 12, fontWeight: 700, color: "#1d1d1f", textTransform: "uppercase" }}>Saved Ads</div>
-                  <div style={{ fontSize: 13, color: "#888", marginTop: 4 }}>{saved.length} ad{saved.length !== 1 ? "s" : ""}</div>
+                  <div style={{ fontSize: 12, fontWeight: 700, color: theme.text, textTransform: "uppercase" }}>Saved Ads</div>
+                  <div style={{ fontSize: 13, color: theme.muted, marginTop: 4 }}>{saved.length} ad{saved.length !== 1 ? "s" : ""}</div>
                 </div>
                 <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                  {saved.length === 0 && <div style={{ color: "#bbb", fontSize: 13, textAlign: "center", padding: "40px 0" }}>No ads saved yet.</div>}
+                  {saved.length === 0 && <div style={{ color: theme.faint, fontSize: 13, textAlign: "center", padding: "40px 0" }}>No ads saved yet.</div>}
                   {saved.map(s => (
-                    <div key={s.id} onClick={() => doLoad(s.id)} style={{ background: ad.id === s.id ? "#f5f5f7" : "transparent", border: `1px solid ${ad.id === s.id ? "#d0d0d0" : "transparent"}`, borderRadius: 10, padding: "12px", cursor: "pointer", display: "flex", gap: 12, alignItems: "flex-start", transition: "all .2s" }}>
-                      <div style={{ width: 40, height: 40, borderRadius: 8, background: "#f5f5f7", flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 16 }}>
+                    <div key={s.id} onClick={() => doLoad(s.id)} style={{ background: ad.id === s.id ? theme.panel : "transparent", border: `1px solid ${ad.id === s.id ? theme.border : "transparent"}`, borderRadius: 10, padding: "12px", cursor: "pointer", display: "flex", gap: 12, alignItems: "flex-start", transition: "all .2s" }}>
+                      <div style={{ width: 40, height: 40, borderRadius: 8, background: theme.panel, flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 16 }}>
                         {s.hasImage ? "🖼" : "📋"}
                       </div>
                       <div style={{ flex: 1, minWidth: 0 }}>
-                        <div style={{ fontSize: 13, fontWeight: 600, color: "#1d1d1f", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{s.name || "Untitled"}</div>
-                        <div style={{ fontSize: 12, color: "#888", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", marginTop: 2 }}>{s.headline || "No headline"}</div>
-                        <div style={{ fontSize: 11, color: "#bbb", marginTop: 4 }}>{new Date(s.savedAt).toLocaleDateString()}</div>
+                        <div style={{ fontSize: 13, fontWeight: 600, color: theme.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{s.name || "Untitled"}</div>
+                        <div style={{ fontSize: 12, color: theme.muted, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", marginTop: 2 }}>{s.headline || "No headline"}</div>
+                        <div style={{ fontSize: 11, color: theme.faint, marginTop: 4 }}>{new Date(s.savedAt).toLocaleDateString()}</div>
                       </div>
                       <button onClick={(e) => doDelete(s.id, e)} style={{ background: "none", border: "none", color: "#bbb", cursor: "pointer", fontSize: 16, padding: 0, flexShrink: 0 }}>✕</button>
                     </div>
@@ -1402,7 +1442,7 @@ Return ONLY valid JSON: {"${type}": "the new variant here"}`;
             )}
 
             {/* ── FORM ── */}
-            {(!isMobile || mobileTab === "edit") && <div style={{ width: isMobile ? "100%" : 340, borderRight: isMobile ? "none" : "1px solid rgba(0,0,0,0.08)", overflowY: "auto", padding: "24px 20px", flexShrink: 0, background: "#fff", display: "flex", flexDirection: "column", gap: 18 }}>
+            {(!isMobile || mobileTab === "edit") && <div style={{ width: isMobile ? "100%" : 340, borderRight: isMobile ? "none" : `1px solid ${theme.border}`, overflowY: "auto", padding: "24px 20px", flexShrink: 0, background: theme.surface, display: "flex", flexDirection: "column", gap: 18, transition: "background .2s, border-color .2s" }}>
 
               <div>
                 <label style={L}>Ad Name</label>
@@ -1410,20 +1450,20 @@ Return ONLY valid JSON: {"${type}": "the new variant here"}`;
               </div>
 
               {/* ── Brand Profile ── */}
-              <div style={{ border: "1px solid #e8e8e8", borderRadius: 10, padding: "14px 14px 10px", background: "#fafafa" }}>
-                <div style={{ fontSize: 11, fontWeight: 700, color: "#888", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 12 }}>Brand Profile</div>
+              <div style={{ border: `1px solid ${theme.softBorder}`, borderRadius: 10, padding: "14px 14px 10px", background: theme.panel }}>
+                <div style={{ fontSize: 11, fontWeight: 700, color: theme.muted, textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 12 }}>Brand Profile</div>
                 <div style={{ display: "flex", gap: 10, marginBottom: 10 }}>
                   <div style={{ flex: 1 }}>
-                    <label style={{ ...L, color: "#888" }}>Handle</label>
+                    <label style={{ ...L, color: theme.muted }}>Handle</label>
                     <input value={brand.name} onChange={e => updBrand("name", e.target.value)} placeholder="rapidgrade" style={{ ...I, fontSize: 13, padding: "9px 12px" }} />
                   </div>
                   <div style={{ width: 70 }}>
-                    <label style={{ ...L, color: "#888" }}>Initials</label>
+                    <label style={{ ...L, color: theme.muted }}>Initials</label>
                     <input value={brand.initials} onChange={e => updBrand("initials", e.target.value.toUpperCase().slice(0, 3))} placeholder="RG" style={{ ...I, fontSize: 13, padding: "9px 12px", textAlign: "center", textTransform: "uppercase" }} />
                   </div>
                 </div>
                 <div>
-                  <label style={{ ...L, color: "#888" }}>Display Name (Facebook)</label>
+                  <label style={{ ...L, color: theme.muted }}>Display Name (Facebook)</label>
                   <input value={brand.displayName} onChange={e => updBrand("displayName", e.target.value)} placeholder="RapidGrade" style={{ ...I, fontSize: 13, padding: "9px 12px" }} />
                 </div>
               </div>
@@ -1433,21 +1473,21 @@ Return ONLY valid JSON: {"${type}": "the new variant here"}`;
                 <label style={L}>Creative</label>
 
                 {/* Single / Carousel toggle */}
-                <div style={{ display: "flex", gap: 4, background: "rgba(0,0,0,0.05)", borderRadius: 8, padding: 3, marginBottom: 10 }}>
+                <div style={{ display: "flex", gap: 4, background: theme.segment, borderRadius: 8, padding: 3, marginBottom: 10 }}>
                   <button
                     onClick={() => upd("adType", "single")}
-                    style={{ flex: 1, background: !isCarousel ? "#fff" : "transparent", color: "#1d1d1f", border: "none", borderRadius: 6, padding: "6px 8px", fontSize: 12, fontWeight: 600, cursor: "pointer", transition: "all .2s", boxShadow: !isCarousel ? "0 1px 3px rgba(0,0,0,0.08)" : "none" }}
+                    style={{ flex: 1, background: !isCarousel ? theme.active : "transparent", color: theme.text, border: "none", borderRadius: 6, padding: "6px 8px", fontSize: 12, fontWeight: 600, cursor: "pointer", transition: "all .2s", boxShadow: !isCarousel ? theme.shadow : "none" }}
                   >Single</button>
                   <button
                     onClick={switchToCarousel}
-                    style={{ flex: 1, background: isCarousel ? "#fff" : "transparent", color: "#1d1d1f", border: "none", borderRadius: 6, padding: "6px 8px", fontSize: 12, fontWeight: 600, cursor: "pointer", transition: "all .2s", boxShadow: isCarousel ? "0 1px 3px rgba(0,0,0,0.08)" : "none" }}
+                    style={{ flex: 1, background: isCarousel ? theme.active : "transparent", color: theme.text, border: "none", borderRadius: 6, padding: "6px 8px", fontSize: 12, fontWeight: 600, cursor: "pointer", transition: "all .2s", boxShadow: isCarousel ? theme.shadow : "none" }}
                   >Carousel</button>
                 </div>
 
                 {/* Aspect ratio — Instagram feed: landscape 1.91:1, square 1:1, portrait 4:5 */}
                 <div style={{ display: "flex", gap: 6, marginBottom: 8 }}>
                   {ASPECT_RATIOS.map(ar => (
-                    <button key={ar.id} onClick={() => upd("aspectRatio", ar.value)} style={{ flex: 1, background: ad.aspectRatio === ar.value ? "#1d1d1f" : "#f5f5f7", color: ad.aspectRatio === ar.value ? "#fff" : "#666", border: "none", borderRadius: 6, padding: "6px 0", fontSize: 12, fontWeight: 600, cursor: "pointer", transition: "all .15s" }}>{ar.label}</button>
+                    <button key={ar.id} onClick={() => upd("aspectRatio", ar.value)} style={{ flex: 1, background: ad.aspectRatio === ar.value ? (darkMode ? "#f5f5f7" : "#1d1d1f") : theme.panel, color: ad.aspectRatio === ar.value ? (darkMode ? "#111318" : "#fff") : theme.muted, border: "none", borderRadius: 6, padding: "6px 0", fontSize: 12, fontWeight: 600, cursor: "pointer", transition: "all .15s" }}>{ar.label}</button>
                   ))}
                 </div>
 
@@ -1858,13 +1898,13 @@ Return ONLY valid JSON: {"${type}": "the new variant here"}`;
             {/* ── PREVIEW ── */}
             {(!isMobile || mobileTab === "preview") && (
               <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
-                <div style={{ flex: 1, overflow: "auto", display: "flex", flexDirection: "column", alignItems: isMobile ? "stretch" : "center", justifyContent: isMobile ? "flex-start" : "center", padding: isMobile ? "0" : "32px 20px 40px", background: isMobile ? "#fff" : "linear-gradient(135deg, #f5f5f7 0%, #ffffff 100%)" }}>
+                <div style={{ flex: 1, overflow: "auto", display: "flex", flexDirection: "column", alignItems: isMobile ? "stretch" : "center", justifyContent: isMobile ? "flex-start" : "center", padding: isMobile ? "0" : "32px 20px 40px", background: isMobile ? theme.surface : theme.previewBg, transition: "background .2s" }}>
                   <div ref={previewRef} style={{ display: "inline-flex" }}>
                     {preview()}
                   </div>
                 </div>
                 {isMobile && (
-                  <div style={{ flexShrink: 0, background: "rgba(255,255,255,0.97)", borderTop: "1px solid rgba(0,0,0,0.08)", padding: "12px 16px", display: "flex", gap: 10 }}>
+                  <div style={{ flexShrink: 0, background: theme.headerBg, borderTop: `1px solid ${theme.border}`, padding: "12px 16px", display: "flex", gap: 10 }}>
                     <button onClick={doShare} disabled={!!shareMsg} style={{ flex: 1, background: shareMsg === "Link copied! ✓" ? "#34c759" : "#1d1d1f", color: "#fff", border: "none", borderRadius: 10, padding: "13px 0", fontSize: 15, fontWeight: 700, cursor: shareMsg ? "default" : "pointer", transition: "all .2s" }}>
                       {shareMsg || "🔗 Share Link"}
                     </button>
