@@ -88,6 +88,46 @@
       return rows[0].data;
     };
 
+    const shareUrlFor = (id) => `${window.location.origin}${window.location.pathname}?share=${id}`;
+
+    const normalizeShareRow = (row) => ({
+      id: row.id,
+      adId: row.data?.ad?.id || null,
+      adName: row.data?.ad?.name || "Untitled",
+      campaignId: row.data?.ad?.campaignId || row.data?.view?.campaignId || "",
+      placement: row.data?.review?.placement || row.data?.view?.placement || "ig-feed",
+      url: shareUrlFor(row.id),
+      createdAt: row.created_at || new Date().toISOString(),
+      review: row.data?.review || null,
+    });
+
+    const fetchRecentShareRows = async () => {
+      const res = await fetch(`${SUPA_URL}/rest/v1/ad_shares?select=id,data,created_at&order=created_at.desc&limit=100`, { headers: supaHdr });
+      if (!res.ok) throw new Error(`${res.status}`);
+      return (await res.json()).map(normalizeShareRow);
+    };
+
+    const mergeShareRecords = (localRecords, remoteRecords) => {
+      const map = new Map();
+      [...remoteRecords, ...localRecords].forEach(record => {
+        const prev = map.get(record.id) || {};
+        map.set(record.id, {
+          ...prev,
+          ...record,
+          adId: record.adId || prev.adId || null,
+          adName: record.adName || prev.adName || "Untitled",
+          campaignId: record.campaignId || prev.campaignId || "",
+          url: record.url || prev.url || shareUrlFor(record.id),
+          review: record.review || prev.review || null,
+        });
+      });
+      return Array.from(map.values()).sort((a, b) => {
+        const at = a.review?.submittedAt || a.createdAt || "";
+        const bt = b.review?.submittedAt || b.createdAt || "";
+        return bt.localeCompare(at);
+      }).slice(0, 150);
+    };
+
     const updateShareReview = async (id, review) => {
       const data = await fetchShare(id);
       const nextData = { ...data, review };
@@ -776,6 +816,7 @@
       const [newCampaignName, setNewCampaignName] = useState("");
       const [shareRecords, setShareRecords] = useState([]);
       const [reviewRefreshing, setReviewRefreshing] = useState(false);
+      const [reviewSyncMsg, setReviewSyncMsg] = useState("");
       const [showLib, setShowLib]        = useState(false);
       const [dragging, setDragging]      = useState(false);
       const [saveMsg, setSaveMsg]        = useState("");
@@ -858,7 +899,15 @@
           } catch(e) {}
           try {
             const s = await storage.get("rg-share-records");
-            if (s) setShareRecords(JSON.parse(s.value));
+            const localShares = s ? JSON.parse(s.value) : [];
+            try {
+              const remoteShares = (await fetchRecentShareRows()).filter(r => r.review);
+              const merged = mergeShareRecords(localShares, remoteShares);
+              setShareRecords(merged);
+              await storage.set("rg-share-records", JSON.stringify(merged));
+            } catch(e) {
+              if (localShares.length) setShareRecords(localShares);
+            }
           } catch(e) {}
           try {
             const b = await storage.get("rg-brand-settings");
@@ -1116,19 +1165,28 @@
       };
 
       const refreshReviews = async () => {
-        if (!shareRecords.length) return;
         setReviewRefreshing(true);
-        const next = await Promise.all(shareRecords.map(async record => {
-          try {
-            const data = await fetchShare(record.id);
-            return { ...record, review: data.review || null, adName: data.ad?.name || record.adName, campaignId: record.campaignId || data.ad?.campaignId || "" };
-          } catch(e) {
-            return record;
-          }
-        }));
-        await storage.set("rg-share-records", JSON.stringify(next));
-        setShareRecords(next);
+        setReviewSyncMsg("");
+        try {
+          const localUpdates = await Promise.all(shareRecords.map(async record => {
+            try {
+              const data = await fetchShare(record.id);
+              return { ...record, review: data.review || null, adName: data.ad?.name || record.adName, campaignId: record.campaignId || data.ad?.campaignId || "" };
+            } catch(e) {
+              return record;
+            }
+          }));
+          const remoteReviewed = (await fetchRecentShareRows()).filter(r => r.review);
+          const next = mergeShareRecords(localUpdates, remoteReviewed);
+          await storage.set("rg-share-records", JSON.stringify(next));
+          setShareRecords(next);
+          const count = next.filter(r => r.review).length;
+          setReviewSyncMsg(count ? `Found ${count} response${count !== 1 ? "s" : ""}` : "No responses yet");
+        } catch(e) {
+          setReviewSyncMsg("Could not refresh");
+        }
         setReviewRefreshing(false);
+        setTimeout(() => setReviewSyncMsg(""), 3000);
       };
 
       const generateCopy = async () => {
@@ -1414,6 +1472,7 @@ Return ONLY valid JSON: {"${type}": "the new variant here"}`;
       const headlineVal = isCarousel ? (editCard.headline || "") : ad.headline;
       const visibleSaved = activeCampaignId ? saved.filter(s => s.campaignId === activeCampaignId) : saved;
       const visibleShares = activeCampaignId ? shareRecords.filter(r => r.campaignId === activeCampaignId) : shareRecords;
+      const visibleReviewCount = visibleShares.filter(r => r.review).length;
       const activeCampaign = campaigns.find(c => c.id === activeCampaignId);
       const reviewForAd = (id) => shareRecords.find(r => r.adId === id && r.review)?.review || null;
 
@@ -1636,20 +1695,24 @@ Return ONLY valid JSON: {"${type}": "the new variant here"}`;
                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
                     <div>
                       <div style={{ fontSize: 12, fontWeight: 700, color: theme.text, textTransform: "uppercase" }}>Review Inbox</div>
-                      <div style={{ fontSize: 13, color: theme.muted, marginTop: 3 }}>{visibleShares.length} shared link{visibleShares.length !== 1 ? "s" : ""}</div>
+                      <div style={{ fontSize: 13, color: theme.muted, marginTop: 3 }}>{visibleReviewCount} response{visibleReviewCount !== 1 ? "s" : ""} · {visibleShares.length} link{visibleShares.length !== 1 ? "s" : ""}</div>
                     </div>
-                    <button onClick={refreshReviews} disabled={reviewRefreshing || !shareRecords.length} style={{ background: theme.segment, color: theme.text, border: `1px solid ${theme.border}`, borderRadius: 8, padding: "7px 10px", fontSize: 12, fontWeight: 700, cursor: reviewRefreshing ? "default" : "pointer" }}>{reviewRefreshing ? "Checking..." : "Refresh"}</button>
+                    <button onClick={refreshReviews} disabled={reviewRefreshing} style={{ background: theme.segment, color: theme.text, border: `1px solid ${theme.border}`, borderRadius: 8, padding: "7px 10px", fontSize: 12, fontWeight: 700, cursor: reviewRefreshing ? "default" : "pointer" }}>{reviewRefreshing ? "Checking..." : "Refresh"}</button>
                   </div>
+                  {reviewSyncMsg && <div style={{ fontSize: 12, color: reviewSyncMsg.includes("Could") ? "#d70015" : "#16a34a", fontWeight: 800, marginBottom: 8 }}>{reviewSyncMsg}</div>}
                   <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                    {visibleShares.length === 0 && <div style={{ color: theme.faint, fontSize: 13, padding: "10px 0" }}>Share an ad to start tracking client responses.</div>}
+                    {visibleShares.length === 0 && <div style={{ color: theme.faint, fontSize: 13, padding: "10px 0" }}>Click Refresh to pull client responses from shared links.</div>}
                     {visibleShares.map(r => (
-                      <div key={r.id} style={{ border: `1px solid ${theme.softBorder}`, borderRadius: 10, padding: "10px 12px", background: theme.panel }}>
+                      <div key={r.id} style={{ border: `1px solid ${r.review ? (r.review.status === "Needs changes" ? "rgba(249,115,22,0.35)" : "rgba(22,163,74,0.32)") : theme.softBorder}`, borderRadius: 10, padding: "10px 12px", background: r.review ? (r.review.status === "Needs changes" ? "rgba(249,115,22,0.06)" : "rgba(22,163,74,0.06)") : theme.panel }}>
                         <div style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
                           <div style={{ fontSize: 13, fontWeight: 700, color: theme.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{r.adName || "Untitled"}</div>
                           <div style={{ fontSize: 11, fontWeight: 800, color: r.review?.status === "Needs changes" ? "#f97316" : r.review?.status ? "#16a34a" : theme.faint, whiteSpace: "nowrap" }}>{r.review?.status || "Pending"}</div>
                         </div>
-                        {r.review?.note && <div style={{ fontSize: 12, color: theme.muted, lineHeight: 1.4, marginTop: 6 }}>{r.review.note}</div>}
-                        <button onClick={() => navigator.clipboard.writeText(r.url)} style={{ marginTop: 8, background: "transparent", border: "none", color: "#f59e0b", fontSize: 12, fontWeight: 700, cursor: "pointer", padding: 0 }}>Copy link</button>
+                        {r.review?.note && <div style={{ fontSize: 13, color: theme.text, lineHeight: 1.45, marginTop: 8, padding: "8px 10px", borderRadius: 8, background: theme.field, border: `1px solid ${theme.border}` }}>{r.review.note}</div>}
+                        <div style={{ display: "flex", justifyContent: "space-between", gap: 8, alignItems: "center", marginTop: 8 }}>
+                          <div style={{ fontSize: 11, color: theme.faint }}>{r.review?.submittedAt ? new Date(r.review.submittedAt).toLocaleString() : "Awaiting response"}</div>
+                          <button onClick={() => navigator.clipboard.writeText(r.url).catch(() => {})} style={{ background: "transparent", border: "none", color: "#f59e0b", fontSize: 12, fontWeight: 700, cursor: "pointer", padding: 0 }}>Copy link</button>
+                        </div>
                       </div>
                     ))}
                   </div>
@@ -1720,20 +1783,24 @@ Return ONLY valid JSON: {"${type}": "the new variant here"}`;
                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, marginBottom: 8 }}>
                     <div>
                       <div style={{ fontSize: 12, fontWeight: 700, color: theme.text, textTransform: "uppercase" }}>Review Inbox</div>
-                      <div style={{ fontSize: 13, color: theme.muted, marginTop: 3 }}>{visibleShares.length} shared link{visibleShares.length !== 1 ? "s" : ""}</div>
+                      <div style={{ fontSize: 13, color: theme.muted, marginTop: 3 }}>{visibleReviewCount} response{visibleReviewCount !== 1 ? "s" : ""} · {visibleShares.length} link{visibleShares.length !== 1 ? "s" : ""}</div>
                     </div>
-                    <button onClick={refreshReviews} disabled={reviewRefreshing || !shareRecords.length} style={{ background: theme.segment, color: theme.text, border: `1px solid ${theme.border}`, borderRadius: 8, padding: "7px 9px", fontSize: 12, fontWeight: 700, cursor: reviewRefreshing ? "default" : "pointer" }}>{reviewRefreshing ? "..." : "Refresh"}</button>
+                    <button onClick={refreshReviews} disabled={reviewRefreshing} style={{ background: theme.segment, color: theme.text, border: `1px solid ${theme.border}`, borderRadius: 8, padding: "7px 9px", fontSize: 12, fontWeight: 700, cursor: reviewRefreshing ? "default" : "pointer" }}>{reviewRefreshing ? "..." : "Refresh"}</button>
                   </div>
+                  {reviewSyncMsg && <div style={{ fontSize: 12, color: reviewSyncMsg.includes("Could") ? "#d70015" : "#16a34a", fontWeight: 800, marginBottom: 8 }}>{reviewSyncMsg}</div>}
                   <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                    {visibleShares.length === 0 && <div style={{ color: theme.faint, fontSize: 13, padding: "8px 0" }}>Shared review links appear here.</div>}
+                    {visibleShares.length === 0 && <div style={{ color: theme.faint, fontSize: 13, padding: "8px 0" }}>Click Refresh to pull client responses from shared links.</div>}
                     {visibleShares.map(r => (
-                      <div key={r.id} style={{ border: `1px solid ${theme.softBorder}`, borderRadius: 10, padding: "10px 12px", background: theme.panel }}>
+                      <div key={r.id} style={{ border: `1px solid ${r.review ? (r.review.status === "Needs changes" ? "rgba(249,115,22,0.35)" : "rgba(22,163,74,0.32)") : theme.softBorder}`, borderRadius: 10, padding: "10px 12px", background: r.review ? (r.review.status === "Needs changes" ? "rgba(249,115,22,0.06)" : "rgba(22,163,74,0.06)") : theme.panel }}>
                         <div style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
                           <div style={{ fontSize: 13, fontWeight: 700, color: theme.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{r.adName || "Untitled"}</div>
                           <div style={{ fontSize: 11, fontWeight: 800, color: r.review?.status === "Needs changes" ? "#f97316" : r.review?.status ? "#16a34a" : theme.faint, whiteSpace: "nowrap" }}>{r.review?.status || "Pending"}</div>
                         </div>
-                        {r.review?.note && <div style={{ fontSize: 12, color: theme.muted, lineHeight: 1.4, marginTop: 6 }}>{r.review.note}</div>}
-                        <button onClick={() => navigator.clipboard.writeText(r.url)} style={{ marginTop: 8, background: "transparent", border: "none", color: "#f59e0b", fontSize: 12, fontWeight: 700, cursor: "pointer", padding: 0 }}>Copy link</button>
+                        {r.review?.note && <div style={{ fontSize: 13, color: theme.text, lineHeight: 1.45, marginTop: 8, padding: "8px 10px", borderRadius: 8, background: theme.field, border: `1px solid ${theme.border}` }}>{r.review.note}</div>}
+                        <div style={{ display: "flex", justifyContent: "space-between", gap: 8, alignItems: "center", marginTop: 8 }}>
+                          <div style={{ fontSize: 11, color: theme.faint }}>{r.review?.submittedAt ? new Date(r.review.submittedAt).toLocaleString() : "Awaiting response"}</div>
+                          <button onClick={() => navigator.clipboard.writeText(r.url).catch(() => {})} style={{ background: "transparent", border: "none", color: "#f59e0b", fontSize: 12, fontWeight: 700, cursor: "pointer", padding: 0 }}>Copy link</button>
+                        </div>
                       </div>
                     ))}
                   </div>
