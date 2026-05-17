@@ -742,6 +742,12 @@
       const [exportingPNG, setExportingPNG] = useState(false);
       const [shareMsg, setShareMsg]        = useState("");
       const [isSharedView] = useState(() => !!new URLSearchParams(window.location.search).get("share"));
+      const [anthropicKey, setAnthropicKey] = useState(() => localStorage.getItem("rg-anthropic-key") || "");
+      const [showKey, setShowKey]           = useState(false);
+      const [showAIPanel, setShowAIPanel]   = useState(false);
+      const [aiLoading, setAiLoading]       = useState(false);
+      const [aiError, setAiError]           = useState("");
+      const [aiSuggestions, setAiSuggestions] = useState(null);
       const fileRef = useRef();
       const previewRef = useRef();
 
@@ -898,6 +904,63 @@
           await storage.set("rg-ads-index", JSON.stringify(nl));
           setSaved(nl);
         } catch(e) {}
+      };
+
+      const generateCopy = async () => {
+        if (!anthropicKey) return;
+        setAiLoading(true);
+        setAiError("");
+        setAiSuggestions(null);
+        const context = [
+          ad.name          && `Ad Name: ${ad.name}`,
+          brand.displayName && `Brand: ${brand.displayName}`,
+          ad.destinationUrl && `URL: ${ad.destinationUrl}`,
+          ad.primaryText   && `Current primary text: ${ad.primaryText}`,
+          ad.headline      && `Current headline: ${ad.headline}`,
+        ].filter(Boolean).join("\n");
+        const prompt = `You are a Meta ads copywriter. Generate 3 headline variants and 3 primary text variants for a Meta (Facebook/Instagram) ad.
+
+Context:
+${context || "No context provided — write general high-converting copy."}
+
+REQUIREMENTS:
+- Headlines: ≤27 chars ideally, hard max 40 chars
+- Primary text: ≤125 chars ideally, hard max 500 chars
+- Conversion-focused, benefit-driven, specific
+- Vary the angle across 3 variants (e.g. curiosity / urgency / social proof)
+
+Return ONLY valid JSON, no extra text:
+{"headlines":["h1","h2","h3"],"primaryTexts":["t1","t2","t3"]}`;
+        try {
+          const res = await fetch("https://api.anthropic.com/v1/messages", {
+            method: "POST",
+            headers: {
+              "x-api-key": anthropicKey,
+              "anthropic-version": "2023-06-01",
+              "anthropic-dangerous-direct-browser-access": "true",
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              model: "claude-opus-4-7",
+              max_tokens: 1024,
+              messages: [{ role: "user", content: prompt }],
+            }),
+          });
+          if (!res.ok) {
+            const err = await res.json().catch(() => ({}));
+            throw new Error(err.error?.message || `API error ${res.status}`);
+          }
+          const data = await res.json();
+          const text = data.content[0].text;
+          const match = text.match(/\{[\s\S]*\}/);
+          if (!match) throw new Error("Invalid response format");
+          const suggestions = JSON.parse(match[0]);
+          if (!Array.isArray(suggestions.headlines) || !Array.isArray(suggestions.primaryTexts)) throw new Error("Unexpected response structure");
+          setAiSuggestions(suggestions);
+        } catch(e) {
+          setAiError(e.message || "Something went wrong");
+        }
+        setAiLoading(false);
       };
 
       const doExport = () => {
@@ -1317,6 +1380,80 @@
                   {ad.destinationUrl && <button onClick={() => go(ad.destinationUrl)} style={{ background: "#f5f5f7", border: "1px solid #d0d0d0", color: "#888", borderRadius: 8, padding: "11px 14px", cursor: "pointer", fontSize: 16, flexShrink: 0 }}>↗</button>}
                 </div>
               </div>
+
+              {/* ── AI Copy Suggestions ── */}
+              <div style={{ border: "1px solid #e0d9ff", borderRadius: 10, padding: "14px", background: "#faf8ff" }}>
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
+                  <div style={{ fontSize: 11, fontWeight: 700, color: "#6d4aff", textTransform: "uppercase", letterSpacing: "0.06em" }}>✨ AI Copy</div>
+                  <button onClick={() => setShowAIPanel(p => !p)} style={{ background: "none", border: "none", color: "#6d4aff", fontSize: 12, fontWeight: 600, cursor: "pointer", padding: "2px 6px" }}>
+                    {showAIPanel ? "Hide" : (anthropicKey ? "Edit Key" : "Setup")}
+                  </button>
+                </div>
+
+                {showAIPanel && (
+                  <div style={{ marginBottom: 10 }}>
+                    <label style={{ ...L, color: "#888", marginBottom: 4 }}>Anthropic API Key</label>
+                    <div style={{ position: "relative" }}>
+                      <input
+                        type={showKey ? "text" : "password"}
+                        value={anthropicKey}
+                        onChange={e => { setAnthropicKey(e.target.value); localStorage.setItem("rg-anthropic-key", e.target.value); }}
+                        placeholder="sk-ant-api03-..."
+                        style={{ ...I, fontSize: 13, paddingRight: 40 }}
+                      />
+                      <button onClick={() => setShowKey(p => !p)} style={{ position: "absolute", right: 10, top: "50%", transform: "translateY(-50%)", background: "none", border: "none", cursor: "pointer", color: "#aaa", fontSize: 14, lineHeight: 1 }}>
+                        {showKey ? "🙈" : "👁"}
+                      </button>
+                    </div>
+                    <div style={{ fontSize: 11, color: "#aaa", marginTop: 4 }}>Stored in your browser only — never sent anywhere except Anthropic.</div>
+                  </div>
+                )}
+
+                <button
+                  onClick={generateCopy}
+                  disabled={!anthropicKey || aiLoading}
+                  style={{ width: "100%", background: aiLoading ? "#e0e0e0" : !anthropicKey ? "#e8e4ff" : "#6d4aff", color: aiLoading ? "#aaa" : !anthropicKey ? "#b0a0ff" : "#fff", border: "none", borderRadius: 8, padding: "11px 0", fontSize: 14, fontWeight: 700, cursor: (!anthropicKey || aiLoading) ? "default" : "pointer", transition: "all .2s" }}
+                >
+                  {aiLoading ? "Generating…" : !anthropicKey ? "Add API key to generate" : "✨ Generate Copy"}
+                </button>
+
+                {aiError && (
+                  <div style={{ fontSize: 12, color: "#d70015", marginTop: 8, padding: "8px 10px", background: "rgba(215,0,21,0.05)", borderRadius: 6 }}>⚠ {aiError}</div>
+                )}
+
+                {aiSuggestions && (
+                  <div style={{ marginTop: 14 }}>
+                    {/* Headlines */}
+                    <div style={{ fontSize: 11, fontWeight: 700, color: "#888", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 8 }}>Headlines</div>
+                    <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 14 }}>
+                      {aiSuggestions.headlines.map((h, i) => (
+                        <div key={i} style={{ background: "#fff", border: "1px solid #e8e4ff", borderRadius: 8, padding: "10px 12px" }}>
+                          <div style={{ display: "flex", alignItems: "flex-start", gap: 8, marginBottom: 6 }}>
+                            <span style={{ flex: 1, fontSize: 13, color: "#1d1d1f", lineHeight: 1.4 }}>{h}</span>
+                            <span style={{ fontSize: 11, fontFamily: "monospace", fontWeight: 700, color: cc(h.length, 27, 40), flexShrink: 0 }}>{h.length}/40</span>
+                          </div>
+                          <button onClick={() => { upd("headline", h.slice(0, 40)); }} style={{ background: "#6d4aff", color: "#fff", border: "none", borderRadius: 6, padding: "5px 12px", fontSize: 12, fontWeight: 600, cursor: "pointer" }}>Use</button>
+                        </div>
+                      ))}
+                    </div>
+
+                    {/* Primary Texts */}
+                    <div style={{ fontSize: 11, fontWeight: 700, color: "#888", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 8 }}>Primary Text</div>
+                    <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                      {aiSuggestions.primaryTexts.map((t, i) => (
+                        <div key={i} style={{ background: "#fff", border: "1px solid #e8e4ff", borderRadius: 8, padding: "10px 12px" }}>
+                          <div style={{ fontSize: 13, color: "#1d1d1f", lineHeight: 1.5, marginBottom: 6 }}>{t}</div>
+                          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                            <span style={{ fontSize: 11, fontFamily: "monospace", fontWeight: 700, color: cc(t.length, 125, 500) }}>{t.length}/500</span>
+                            <button onClick={() => upd("primaryText", t)} style={{ background: "#6d4aff", color: "#fff", border: "none", borderRadius: 6, padding: "5px 12px", fontSize: 12, fontWeight: 600, cursor: "pointer" }}>Use</button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+
             </div>}
 
             {/* ── PREVIEW ── */}
