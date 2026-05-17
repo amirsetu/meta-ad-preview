@@ -817,7 +817,7 @@
       const [shareRecords, setShareRecords] = useState([]);
       const [reviewRefreshing, setReviewRefreshing] = useState(false);
       const [reviewSyncMsg, setReviewSyncMsg] = useState("");
-      const [showLib, setShowLib]        = useState(false);
+      const [showLib, setShowLib]        = useState(() => window.innerWidth >= 1180);
       const [dragging, setDragging]      = useState(false);
       const [saveMsg, setSaveMsg]        = useState("");
       const [mockupMode, setMockupMode]  = useState("phone");
@@ -856,7 +856,7 @@
       const aiReady = !!AI_PROXY_URL;
 
       const theme = darkMode ? {
-        appBg: "linear-gradient(135deg, #111318 0%, #191b22 100%)",
+        appBg: "#111318",
         headerBg: "rgba(24,26,33,0.86)",
         surface: "#181a21",
         panel: "#20232c",
@@ -869,12 +869,12 @@
         muted: "#a4a8b3",
         faint: "#737783",
         shadow: "0 1px 3px rgba(0,0,0,0.28)",
-        previewBg: "linear-gradient(135deg, #161820 0%, #22252f 100%)",
+        previewBg: "#141720",
       } : {
-        appBg: "linear-gradient(135deg, #f5f5f7 0%, #ffffff 100%)",
+        appBg: "#f3f4f6",
         headerBg: "rgba(255,255,255,0.8)",
         surface: "#fff",
-        panel: "#fafafa",
+        panel: "#f8fafc",
         field: "#fff",
         segment: "rgba(0,0,0,0.05)",
         active: "#fff",
@@ -884,7 +884,7 @@
         muted: "#888",
         faint: "#bbb",
         shadow: "0 1px 3px rgba(0,0,0,0.08)",
-        previewBg: "linear-gradient(135deg, #f5f5f7 0%, #ffffff 100%)",
+        previewBg: "#eef1f5",
       };
 
       useEffect(() => {
@@ -1513,6 +1513,28 @@ Return ONLY valid JSON: {"${type}": "the new variant here"}`;
       const visibleReviewCount = visibleShares.filter(r => r.review).length;
       const activeCampaign = campaigns.find(c => c.id === activeCampaignId);
       const reviewForAd = (id) => shareRecords.find(r => r.adId === id && r.review)?.review || null;
+      const completedSteps = [
+        ad.name?.trim(),
+        hasCreativeImage(ad),
+        ad.primaryText?.trim() || ad.headline?.trim(),
+        ad.destinationUrl?.trim(),
+      ].filter(Boolean).length;
+      const readyLabel = completedSteps >= 3 ? "Ready to preview" : completedSteps >= 2 ? "Draft in progress" : "Needs basics";
+      const sectionStyle = { border: `1px solid ${theme.softBorder}`, borderRadius: 12, padding: 16, background: theme.panel, boxShadow: darkMode ? "none" : "0 1px 2px rgba(15,23,42,0.04)" };
+      const sectionTitle = { fontSize: 12, fontWeight: 800, color: theme.text, textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 12 };
+      const helperText = { fontSize: 12, color: theme.muted, lineHeight: 1.45 };
+      const actionButton = (variant = "ghost", disabled = false) => ({
+        background: disabled ? theme.segment : variant === "primary" ? "#f59e0b" : variant === "dark" ? (darkMode ? "#f5f5f7" : "#111827") : theme.segment,
+        color: disabled ? theme.faint : variant === "primary" ? "#fff" : variant === "dark" ? (darkMode ? "#111318" : "#fff") : theme.text,
+        border: variant === "primary" || variant === "dark" ? "none" : `1px solid ${theme.border}`,
+        borderRadius: 9,
+        padding: "9px 13px",
+        fontSize: 13,
+        fontWeight: 800,
+        cursor: disabled ? "default" : "pointer",
+        transition: "all .2s",
+        whiteSpace: "nowrap",
+      });
 
       // ── SHARED / CLIENT VIEW ──────────────────────────────────────────────
       if (isSharedView) {
@@ -1615,69 +1637,79 @@ Return ONLY valid JSON: {"${type}": "the new variant here"}`;
       return (
         <div style={{ display: "flex", flexDirection: "column", height: "100vh", background: theme.appBg, color: theme.text, fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif', overflow: "hidden", transition: "background .2s, color .2s" }}>
           {/* ── HEADER ── */}
-          <div style={{ display: "flex", flexDirection: "column", flexShrink: 0, background: theme.headerBg, backdropFilter: "blur(10px)", borderBottom: `1px solid ${theme.border}`, transition: "background .2s, border-color .2s" }}>
-            <div style={{ height: isMobile ? 52 : 60, display: "flex", alignItems: "center", justifyContent: "space-between", padding: isMobile ? "0 16px" : "0 28px" }}>
+          <div style={{ display: "flex", flexDirection: "column", flexShrink: 0, background: theme.headerBg, backdropFilter: "blur(10px)", borderBottom: `1px solid ${theme.border}`, transition: "background .2s, border-color .2s", boxShadow: darkMode ? "none" : "0 1px 0 rgba(15,23,42,0.04)" }}>
+            <div style={{ minHeight: isMobile ? 56 : 68, display: "flex", alignItems: "center", justifyContent: "space-between", padding: isMobile ? "0 16px" : "0 24px", gap: 16 }}>
               <div style={{ display: "flex", alignItems: "center", gap: isMobile ? 10 : 14 }}>
-                <div style={{ width: 32, height: 32, borderRadius: 8, background: "linear-gradient(135deg, #f59e0b, #d97706)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 16, fontWeight: 900, color: "#fff" }}>⚡</div>
+                <div style={{ width: 36, height: 36, borderRadius: 10, background: "linear-gradient(135deg, #f59e0b, #d97706)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 14, fontWeight: 900, color: "#fff", letterSpacing: 0 }}>RG</div>
                 <div>
-                  <div style={{ fontWeight: 700, fontSize: isMobile ? 14 : 16, letterSpacing: -0.5, color: theme.text }}>Meta Ad Preview</div>
-                  {!isMobile && <div style={{ fontSize: 12, color: theme.muted, marginTop: 2 }}>RapidGrade</div>}
+                  <div style={{ fontWeight: 850, fontSize: isMobile ? 15 : 17, color: theme.text }}>Meta Ad Preview</div>
+                  {!isMobile && <div style={{ fontSize: 12, color: theme.muted, marginTop: 3 }}>{activeCampaign ? activeCampaign.name : "All campaigns"} · {readyLabel}</div>}
                 </div>
               </div>
-              <div style={{ display: "flex", gap: isMobile ? 6 : 10, alignItems: "center" }}>
+              <div style={{ display: "flex", gap: isMobile ? 6 : 8, alignItems: "center", overflowX: "auto", justifyContent: "flex-end" }}>
                 {!isMobile && (
-                  <button onClick={() => setShowLib(!showLib)} style={{ background: showLib ? theme.segment : "transparent", color: theme.text, border: "none", borderRadius: 8, padding: "8px 16px", fontSize: 14, fontWeight: 600, cursor: "pointer", transition: "all .2s" }}>
-                    Library {saved.length > 0 && `(${saved.length})`}
+                  <button onClick={() => setShowLib(!showLib)} style={actionButton("ghost")}>
+                    {showLib ? "Hide Workspace" : `Workspace${saved.length > 0 ? ` (${saved.length})` : ""}`}
                   </button>
                 )}
                 {!isMobile && (
-                  <button onClick={startNewAd} title={activeCampaign ? `Create new ad in ${activeCampaign.name}` : "Create new ad"} style={{ background: "transparent", color: theme.text, border: "none", borderRadius: 8, padding: "8px 16px", fontSize: 14, fontWeight: 600, cursor: "pointer" }}>
-                    + New{activeCampaign ? " in Folder" : ""}
+                  <button onClick={startNewAd} title={activeCampaign ? `Create new ad in ${activeCampaign.name}` : "Create new ad"} style={actionButton("ghost")}>
+                    New Ad
                   </button>
                 )}
                 {!isMobile && saved.length > 0 && (
-                  <button onClick={doExport} style={{ background: "transparent", color: "#888", border: "none", borderRadius: 8, padding: "8px 16px", fontSize: 14, fontWeight: 600, cursor: "pointer" }}>
-                    ↓ Backup
+                  <button onClick={doExport} style={actionButton("ghost")}>
+                    Backup
                   </button>
                 )}
                 {!isMobile && (
-                  <button onClick={doExportPNG} disabled={exportingPNG} style={{ background: exportingPNG ? "#e0e0e0" : "#f0f0f0", color: exportingPNG ? "#aaa" : "#1d1d1f", border: "1px solid #d0d0d0", borderRadius: 8, padding: "8px 16px", fontSize: 14, fontWeight: 600, cursor: exportingPNG ? "default" : "pointer", transition: "all .2s" }}>
-                    {exportingPNG ? "Exporting…" : "📷 Export PNG"}
+                  <button onClick={doExportPNG} disabled={exportingPNG} style={actionButton("ghost", exportingPNG)}>
+                    {exportingPNG ? "Exporting..." : "Export PNG"}
                   </button>
                 )}
                 {!isMobile && (
-                  <button onClick={doShare} disabled={!!shareMsg} style={{ background: shareMsg === "Link copied! ✓" ? "#34c759" : shareMsg ? "#e0e0e0" : "#1d1d1f", color: shareMsg === "Link copied! ✓" ? "#fff" : shareMsg ? "#aaa" : "#fff", border: "none", borderRadius: 8, padding: "8px 16px", fontSize: 14, fontWeight: 600, cursor: shareMsg ? "default" : "pointer", transition: "all .2s" }}>
-                    {shareMsg || "🔗 Share"}
+                  <button onClick={doShare} disabled={!!shareMsg} style={shareMsg === "Link copied! ✓" ? { ...actionButton("primary"), background: "#16a34a" } : actionButton("dark", !!shareMsg)}>
+                    {shareMsg || "Share for Review"}
                   </button>
                 )}
-                <button onClick={() => setDarkMode(p => !p)} title={darkMode ? "Switch to light appearance" : "Switch to dark appearance"} style={{ background: theme.segment, color: theme.text, border: `1px solid ${theme.border}`, borderRadius: 8, padding: isMobile ? "7px 10px" : "8px 14px", fontSize: isMobile ? 13 : 14, fontWeight: 700, cursor: "pointer", transition: "all .2s", minWidth: isMobile ? 44 : 86 }}>
+                <button onClick={() => setDarkMode(p => !p)} title={darkMode ? "Switch to light appearance" : "Switch to dark appearance"} style={{ ...actionButton("ghost"), padding: isMobile ? "8px 10px" : "9px 12px", minWidth: isMobile ? 44 : 76 }}>
                   {darkMode ? "Light" : "Dark"}
                 </button>
                 {isMobile && (
-                  <button onClick={() => { startNewAd(); setMobileTab("edit"); }} title={activeCampaign ? `Create new ad in ${activeCampaign.name}` : "Create new ad"} style={{ background: "transparent", color: theme.text, border: "none", borderRadius: 8, padding: "6px 10px", fontSize: 13, fontWeight: 600, cursor: "pointer" }}>
-                    + New
+                  <button onClick={() => { startNewAd(); setMobileTab("edit"); }} title={activeCampaign ? `Create new ad in ${activeCampaign.name}` : "Create new ad"} style={actionButton("ghost")}>
+                    New
                   </button>
                 )}
-                <button onClick={doSave} style={{ background: "#f59e0b", color: "#fff", border: "none", borderRadius: 8, padding: isMobile ? "7px 14px" : "8px 20px", fontSize: isMobile ? 13 : 14, fontWeight: 700, cursor: "pointer", transition: "all .2s" }}>
-                  {saveMsg || "Save"}
+                <button onClick={doSave} style={{ ...actionButton("primary"), padding: isMobile ? "8px 14px" : "9px 18px" }}>
+                  {saveMsg || "Save Ad"}
                 </button>
               </div>
             </div>
 
             {/* Desktop: mockup mode + placement tabs */}
             {!isMobile && (
-              <div style={{ height: 50, display: "flex", alignItems: "center", gap: 16, padding: "0 28px" }}>
-                <div style={{ display: "flex", gap: 4, background: theme.segment, borderRadius: 8, padding: 3 }}>
-                  <button onClick={() => setMockupMode("phone")} style={{ background: mockupMode === "phone" ? theme.active : "transparent", color: theme.text, border: "none", borderRadius: 6, padding: "6px 12px", fontSize: 12, fontWeight: 600, cursor: "pointer", transition: "all .2s", boxShadow: mockupMode === "phone" ? theme.shadow : "none" }}>📱 Phone</button>
-                  <button onClick={() => setMockupMode("desktop")} style={{ background: mockupMode === "desktop" ? theme.active : "transparent", color: theme.text, border: "none", borderRadius: 6, padding: "6px 12px", fontSize: 12, fontWeight: 600, cursor: "pointer", transition: "all .2s", boxShadow: mockupMode === "desktop" ? theme.shadow : "none" }}>🖥️ Monitor</button>
-                </div>
-                <div style={{ display: "flex", gap: 4 }}>
-                  {PLACEMENTS.filter(p => {
-                    if (mockupMode === "phone") return ["ig-feed", "ig-stories", "ig-reels", "fb-mobile"].includes(p.id);
-                    else return ["ig-feed", "ig-stories", "ig-reels", "fb-desktop"].includes(p.id);
-                  }).map(p => (
-                    <button key={p.id} onClick={() => setPlacement(p.id)} style={{ background: placement === p.id ? theme.active : "transparent", color: theme.text, border: "none", borderRadius: 6, padding: "6px 12px", fontSize: 12, fontWeight: 600, cursor: "pointer", transition: "all .2s", boxShadow: placement === p.id ? theme.shadow : "none" }}>{p.label}</button>
+              <div style={{ minHeight: 52, display: "flex", alignItems: "center", justifyContent: "space-between", gap: 18, padding: "0 24px 12px" }}>
+                <div style={{ display: "flex", gap: 8, alignItems: "center", minWidth: 0 }}>
+                  {["Setup", "Creative", "Copy", "Review"].map((step, idx) => (
+                    <div key={step} style={{ display: "flex", alignItems: "center", gap: 8, color: idx < completedSteps ? "#16a34a" : theme.muted, fontSize: 12, fontWeight: 800, whiteSpace: "nowrap" }}>
+                      <span style={{ width: 20, height: 20, borderRadius: 999, display: "inline-flex", alignItems: "center", justifyContent: "center", background: idx < completedSteps ? "rgba(22,163,74,0.12)" : theme.segment, border: `1px solid ${idx < completedSteps ? "rgba(22,163,74,0.35)" : theme.border}` }}>{idx + 1}</span>
+                      {step}
+                    </div>
                   ))}
+                </div>
+                <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
+                  <div style={{ display: "flex", gap: 4, background: theme.segment, borderRadius: 9, padding: 3 }}>
+                    <button onClick={() => setMockupMode("phone")} style={{ background: mockupMode === "phone" ? theme.active : "transparent", color: theme.text, border: "none", borderRadius: 7, padding: "7px 12px", fontSize: 12, fontWeight: 800, cursor: "pointer", transition: "all .2s", boxShadow: mockupMode === "phone" ? theme.shadow : "none" }}>Phone</button>
+                    <button onClick={() => setMockupMode("desktop")} style={{ background: mockupMode === "desktop" ? theme.active : "transparent", color: theme.text, border: "none", borderRadius: 7, padding: "7px 12px", fontSize: 12, fontWeight: 800, cursor: "pointer", transition: "all .2s", boxShadow: mockupMode === "desktop" ? theme.shadow : "none" }}>Monitor</button>
+                  </div>
+                  <div style={{ display: "flex", gap: 4, background: theme.segment, borderRadius: 9, padding: 3 }}>
+                    {PLACEMENTS.filter(p => {
+                      if (mockupMode === "phone") return ["ig-feed", "ig-stories", "ig-reels", "fb-mobile"].includes(p.id);
+                      else return ["ig-feed", "ig-stories", "ig-reels", "fb-desktop"].includes(p.id);
+                    }).map(p => (
+                      <button key={p.id} onClick={() => setPlacement(p.id)} style={{ background: placement === p.id ? theme.active : "transparent", color: theme.text, border: "none", borderRadius: 7, padding: "7px 12px", fontSize: 12, fontWeight: 800, cursor: "pointer", transition: "all .2s", boxShadow: placement === p.id ? theme.shadow : "none" }}>{p.label}</button>
+                    ))}
+                  </div>
                 </div>
               </div>
             )}
@@ -1690,7 +1722,7 @@ Return ONLY valid JSON: {"${type}": "the new variant here"}`;
                   <div style={{ display: "flex", gap: 4, background: theme.segment, borderRadius: 8, padding: 3, width: "100%" }}>
                     {["edit", "library", "preview"].map(tab => (
                       <button key={tab} onClick={() => setMobileTab(tab)} style={{ flex: 1, background: mobileTab === tab ? theme.active : "transparent", color: theme.text, border: "none", borderRadius: 6, padding: "7px 4px", fontSize: 13, fontWeight: 600, cursor: "pointer", boxShadow: mobileTab === tab ? theme.shadow : "none" }}>
-                        {tab === "library" ? `Library${saved.length > 0 ? ` (${saved.length})` : ""}` : tab.charAt(0).toUpperCase() + tab.slice(1)}
+                        {tab === "library" ? `Workspace${saved.length > 0 ? ` (${saved.length})` : ""}` : tab.charAt(0).toUpperCase() + tab.slice(1)}
                       </button>
                     ))}
                   </div>
@@ -1732,7 +1764,7 @@ Return ONLY valid JSON: {"${type}": "the new variant here"}`;
                 <div style={{ marginBottom: 18 }}>
                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
                     <div>
-                      <div style={{ fontSize: 12, fontWeight: 700, color: theme.text, textTransform: "uppercase" }}>Review Inbox</div>
+                      <div style={{ fontSize: 12, fontWeight: 800, color: theme.text, textTransform: "uppercase", letterSpacing: "0.06em" }}>Client Responses</div>
                       <div style={{ fontSize: 13, color: theme.muted, marginTop: 3 }}>{visibleReviewCount} response{visibleReviewCount !== 1 ? "s" : ""} · {visibleShares.length} link{visibleShares.length !== 1 ? "s" : ""}</div>
                     </div>
                     <button onClick={refreshReviews} disabled={reviewRefreshing} style={{ background: theme.segment, color: theme.text, border: `1px solid ${theme.border}`, borderRadius: 8, padding: "7px 10px", fontSize: 12, fontWeight: 700, cursor: reviewRefreshing ? "default" : "pointer" }}>{reviewRefreshing ? "Checking..." : "Refresh"}</button>
@@ -1763,7 +1795,7 @@ Return ONLY valid JSON: {"${type}": "the new variant here"}`;
                 </div>
 
                 <div style={{ marginBottom: 16 }}>
-                  <div style={{ fontSize: 12, fontWeight: 700, color: theme.text, textTransform: "uppercase" }}>Saved Ads</div>
+                  <div style={{ fontSize: 12, fontWeight: 800, color: theme.text, textTransform: "uppercase", letterSpacing: "0.06em" }}>Saved Ads</div>
                   <div style={{ fontSize: 13, color: theme.muted, marginTop: 4 }}>{visibleSaved.length} ad{visibleSaved.length !== 1 ? "s" : ""}{activeCampaign ? ` in ${activeCampaign.name}` : ""}</div>
                 </div>
                 <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
@@ -1808,7 +1840,7 @@ Return ONLY valid JSON: {"${type}": "the new variant here"}`;
 
             {/* ── LIBRARY (desktop sidebar) ── */}
             {!isMobile && showLib && (
-              <div style={{ width: 280, borderRight: `1px solid ${theme.border}`, overflowY: "auto", background: theme.surface, flexShrink: 0, padding: "20px" }}>
+              <div style={{ width: 320, borderRight: `1px solid ${theme.border}`, overflowY: "auto", background: theme.surface, flexShrink: 0, padding: "20px" }}>
                 <div style={{ marginBottom: 18 }}>
                   <div style={{ fontSize: 12, fontWeight: 700, color: theme.text, textTransform: "uppercase" }}>Campaigns</div>
                   <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 10 }}>
@@ -1826,7 +1858,7 @@ Return ONLY valid JSON: {"${type}": "the new variant here"}`;
                 <div style={{ marginBottom: 18 }}>
                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, marginBottom: 8 }}>
                     <div>
-                      <div style={{ fontSize: 12, fontWeight: 700, color: theme.text, textTransform: "uppercase" }}>Review Inbox</div>
+                      <div style={{ fontSize: 12, fontWeight: 800, color: theme.text, textTransform: "uppercase", letterSpacing: "0.06em" }}>Client Responses</div>
                       <div style={{ fontSize: 13, color: theme.muted, marginTop: 3 }}>{visibleReviewCount} response{visibleReviewCount !== 1 ? "s" : ""} · {visibleShares.length} link{visibleShares.length !== 1 ? "s" : ""}</div>
                     </div>
                     <button onClick={refreshReviews} disabled={reviewRefreshing} style={{ background: theme.segment, color: theme.text, border: `1px solid ${theme.border}`, borderRadius: 8, padding: "7px 9px", fontSize: 12, fontWeight: 700, cursor: reviewRefreshing ? "default" : "pointer" }}>{reviewRefreshing ? "..." : "Refresh"}</button>
@@ -1857,7 +1889,7 @@ Return ONLY valid JSON: {"${type}": "the new variant here"}`;
                 </div>
 
                 <div style={{ marginBottom: 16 }}>
-                  <div style={{ fontSize: 12, fontWeight: 700, color: theme.text, textTransform: "uppercase" }}>Saved Ads</div>
+                  <div style={{ fontSize: 12, fontWeight: 800, color: theme.text, textTransform: "uppercase", letterSpacing: "0.06em" }}>Saved Ads</div>
                   <div style={{ fontSize: 13, color: theme.muted, marginTop: 4 }}>{visibleSaved.length} ad{visibleSaved.length !== 1 ? "s" : ""}{activeCampaign ? ` in ${activeCampaign.name}` : ""}</div>
                 </div>
                 <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
@@ -1898,25 +1930,43 @@ Return ONLY valid JSON: {"${type}": "the new variant here"}`;
             )}
 
             {/* ── FORM ── */}
-            {(!isMobile || mobileTab === "edit") && <div style={{ width: isMobile ? "100%" : 340, borderRight: isMobile ? "none" : `1px solid ${theme.border}`, overflowY: "auto", padding: "24px 20px", flexShrink: 0, background: theme.surface, display: "flex", flexDirection: "column", gap: 18, transition: "background .2s, border-color .2s" }}>
+            {(!isMobile || mobileTab === "edit") && <div style={{ width: isMobile ? "100%" : 380, borderRight: isMobile ? "none" : `1px solid ${theme.border}`, overflowY: "auto", padding: isMobile ? "18px 16px 28px" : "22px", flexShrink: 0, background: theme.surface, display: "flex", flexDirection: "column", gap: 16, transition: "background .2s, border-color .2s" }}>
 
-              <div>
-                <label style={L}>Ad Name</label>
-                <input value={ad.name} onChange={e => upd("name", e.target.value)} placeholder="Summer Collection" style={I} />
+              <div style={{ ...sectionStyle, background: darkMode ? "#1b1e27" : "#fff" }}>
+                <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "flex-start", marginBottom: 12 }}>
+                  <div>
+                    <div style={{ fontSize: 16, fontWeight: 850, color: theme.text }}>{ad.name || "Untitled ad"}</div>
+                    <div style={{ ...helperText, marginTop: 4 }}>{activeCampaign ? activeCampaign.name : "No campaign selected"}</div>
+                  </div>
+                  <div style={{ borderRadius: 999, padding: "5px 9px", background: completedSteps >= 3 ? "rgba(22,163,74,0.12)" : "rgba(245,158,11,0.12)", color: completedSteps >= 3 ? "#16a34a" : "#f59e0b", fontSize: 11, fontWeight: 850, whiteSpace: "nowrap" }}>{readyLabel}</div>
+                </div>
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 6 }}>
+                  {["Name", "Creative", "Copy", "URL"].map((item, idx) => (
+                    <div key={item} style={{ height: 6, borderRadius: 999, background: idx < completedSteps ? "#f59e0b" : theme.segment }} />
+                  ))}
+                </div>
               </div>
 
-              <div>
-                <label style={L}>Campaign Folder</label>
-                <select value={ad.campaignId || ""} onChange={e => upd("campaignId", e.target.value)} style={{ ...I, appearance: "none" }}>
-                  <option value="">Unassigned</option>
-                  {campaigns.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-                </select>
-                {campaigns.length === 0 && <div style={{ fontSize: 11, color: theme.faint, marginTop: 6 }}>Create folders from the Library panel.</div>}
+              <div style={sectionStyle}>
+                <div style={sectionTitle}>Ad Setup</div>
+                <div style={{ marginBottom: 12 }}>
+                  <label style={L}>Ad Name</label>
+                  <input value={ad.name} onChange={e => upd("name", e.target.value)} placeholder="Summer Collection" style={I} />
+                </div>
+
+                <div>
+                  <label style={L}>Campaign Folder</label>
+                  <select value={ad.campaignId || ""} onChange={e => upd("campaignId", e.target.value)} style={{ ...I, appearance: "none" }}>
+                    <option value="">Unassigned</option>
+                    {campaigns.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                  </select>
+                  {campaigns.length === 0 && <div style={{ fontSize: 11, color: theme.faint, marginTop: 6 }}>Create folders from the Workspace panel.</div>}
+                </div>
               </div>
 
               {/* ── Brand Profile ── */}
-              <div style={{ border: `1px solid ${theme.softBorder}`, borderRadius: 10, padding: "14px 14px 10px", background: theme.panel }}>
-                <div style={{ fontSize: 11, fontWeight: 700, color: theme.muted, textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 12 }}>Brand Profile</div>
+              <div style={sectionStyle}>
+                <div style={sectionTitle}>Brand Profile</div>
                 <div style={{ display: "flex", gap: 10, marginBottom: 10 }}>
                   <div style={{ flex: 1 }}>
                     <label style={{ ...L, color: theme.muted }}>Handle</label>
@@ -1934,8 +1984,8 @@ Return ONLY valid JSON: {"${type}": "the new variant here"}`;
               </div>
 
               {/* ── Creative ── */}
-              <div>
-                <label style={L}>Creative</label>
+              <div style={sectionStyle}>
+                <div style={sectionTitle}>Creative</div>
 
                 {/* Single / Carousel toggle */}
                 <div style={{ display: "flex", gap: 4, background: theme.segment, borderRadius: 8, padding: 3, marginBottom: 10 }}>
@@ -2016,7 +2066,9 @@ Return ONLY valid JSON: {"${type}": "the new variant here"}`;
                 <input ref={fileRef} type="file" accept="image/*" style={{ display: "none" }} onChange={e => { handleFile(e.target.files[0]); e.target.value = ""; }} />
               </div>
 
-              <div>
+              <div style={sectionStyle}>
+                <div style={sectionTitle}>Copy and Destination</div>
+                <div style={{ marginBottom: 14 }}>
                 <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6 }}>
                   <label style={{ ...L, marginBottom: 0 }}>Primary Text</label>
                   <span style={{ fontSize: 12, fontFamily: "monospace", color: cc(ad.primaryText.length, LIMITS.primaryText.rec, LIMITS.primaryText.max), fontWeight: 700 }}>
@@ -2027,7 +2079,7 @@ Return ONLY valid JSON: {"${type}": "the new variant here"}`;
                 {ad.primaryText.length > 125 && <div style={{ fontSize: 12, color: "#d70015", marginTop: 6 }}>⚠ Truncates at 125 characters</div>}
               </div>
 
-              <div>
+              <div style={{ marginBottom: 14 }}>
                 <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6 }}>
                   <label style={{ ...L, marginBottom: 0 }}>
                     {isCarousel ? `Card ${carouselEditIdx + 1} Headline` : "Headline"}
@@ -2057,7 +2109,7 @@ Return ONLY valid JSON: {"${type}": "the new variant here"}`;
                 />
               </div>
 
-              <div>
+              <div style={{ marginBottom: 14 }}>
                 <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6 }}>
                   <label style={{ ...L, marginBottom: 0 }}>Description</label>
                   <span style={{ fontSize: 12, fontFamily: "monospace", color: cc(ad.description.length, LIMITS.description.rec, LIMITS.description.max), fontWeight: 700 }}>
@@ -2067,7 +2119,7 @@ Return ONLY valid JSON: {"${type}": "the new variant here"}`;
                 <input value={ad.description} onChange={e => upd("description", e.target.value)} placeholder="Optional" style={I} />
               </div>
 
-              <div>
+              <div style={{ marginBottom: 14 }}>
                 <label style={L}>CTA Button</label>
                 <select value={ad.cta} onChange={e => upd("cta", e.target.value)} style={{ ...I, cursor: "pointer", appearance: "none", WebkitAppearance: "none" }}>
                   {CTA_OPTIONS.map(o => <option key={o} value={o}>{o}</option>)}
@@ -2080,6 +2132,7 @@ Return ONLY valid JSON: {"${type}": "the new variant here"}`;
                   <input value={ad.destinationUrl} onChange={e => upd("destinationUrl", e.target.value)} placeholder="getrapidgrade.com" style={{ ...I, flex: 1 }} />
                   {ad.destinationUrl && <button onClick={() => go(ad.destinationUrl)} style={{ background: "#f5f5f7", border: "1px solid #d0d0d0", color: "#888", borderRadius: 8, padding: "11px 14px", cursor: "pointer", fontSize: 16, flexShrink: 0 }}>↗</button>}
                 </div>
+              </div>
               </div>
 
               {aiReady && (
@@ -2361,6 +2414,18 @@ Return ONLY valid JSON: {"${type}": "the new variant here"}`;
             {/* ── PREVIEW ── */}
             {(!isMobile || mobileTab === "preview") && (
               <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
+                {!isMobile && (
+                  <div style={{ flexShrink: 0, padding: "14px 20px", display: "flex", justifyContent: "space-between", alignItems: "center", gap: 14, background: theme.surface, borderBottom: `1px solid ${theme.border}` }}>
+                    <div>
+                      <div style={{ fontSize: 13, fontWeight: 850, color: theme.text }}>{PLACEMENTS.find(p => p.id === placement)?.label || "Preview"}</div>
+                      <div style={{ fontSize: 12, color: theme.muted, marginTop: 2 }}>{mockupMode === "desktop" && placement !== "ig-reels" ? "Desktop monitor mockup" : "Phone mockup"} · {ad.cta}</div>
+                    </div>
+                    <div style={{ display: "flex", gap: 8 }}>
+                      <button onClick={doSave} style={actionButton("primary")}>{saveMsg || "Save"}</button>
+                      <button onClick={doShare} disabled={!!shareMsg} style={shareMsg === "Link copied! ✓" ? { ...actionButton("primary"), background: "#16a34a" } : actionButton("dark", !!shareMsg)}>{shareMsg || "Send to Client"}</button>
+                    </div>
+                  </div>
+                )}
                 <div style={{ flex: 1, overflow: "auto", display: "flex", flexDirection: "column", alignItems: isMobile ? "stretch" : "center", justifyContent: isMobile ? "flex-start" : "center", padding: isMobile ? "0" : "32px 20px 40px", background: isMobile ? theme.surface : theme.previewBg, transition: "background .2s" }}>
                   <div ref={previewRef} style={{ display: "inline-flex" }}>
                     {preview()}
