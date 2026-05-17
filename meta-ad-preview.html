@@ -1152,6 +1152,44 @@
         } catch(e) {}
       };
 
+      const makeRevisionFromReview = async (record) => {
+        try {
+          const data = await fetchShare(record.id);
+          const source = data.ad || {};
+          const note = data.review?.note || record.review?.note || "";
+          const status = data.review?.status || record.review?.status || "Reviewed";
+          const revision = {
+            ...EMPTY,
+            ...source,
+            id: null,
+            name: `${source.name || record.adName || "Ad"} Revision`,
+            campaignId: source.campaignId || record.campaignId || "",
+            description: source.description || note ? [source.description, note && `Client note: ${note}`].filter(Boolean).join("\n") : "",
+            reviewSource: {
+              shareId: record.id,
+              status,
+              note,
+              submittedAt: data.review?.submittedAt || record.review?.submittedAt || "",
+            },
+          };
+          setAd(revision);
+          setPlacement(data.review?.placement || data.view?.placement || record.placement || "ig-feed");
+          setActiveCampaignId(revision.campaignId || "");
+          setCarouselEditIdx(0);
+          setShowLib(false);
+          if (isMobile) setMobileTab("edit");
+          setSaveMsg("Revision ready");
+          setTimeout(() => setSaveMsg(""), 2200);
+        } catch(e) {
+          setReviewSyncMsg("Could not load revision");
+          setTimeout(() => setReviewSyncMsg(""), 3000);
+        }
+      };
+
+      const openReviewLink = (record) => {
+        window.open(record.url || shareUrlFor(record.id), "_blank", "noopener,noreferrer");
+      };
+
       const createCampaign = async () => {
         const name = newCampaignName.trim();
         if (!name) return;
@@ -1713,6 +1751,12 @@ Return ONLY valid JSON: {"${type}": "the new variant here"}`;
                           <div style={{ fontSize: 11, color: theme.faint }}>{r.review?.submittedAt ? new Date(r.review.submittedAt).toLocaleString() : "Awaiting response"}</div>
                           <button onClick={() => navigator.clipboard.writeText(r.url).catch(() => {})} style={{ background: "transparent", border: "none", color: "#f59e0b", fontSize: 12, fontWeight: 700, cursor: "pointer", padding: 0 }}>Copy link</button>
                         </div>
+                        {r.review && (
+                          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginTop: 9 }}>
+                            <button onClick={() => makeRevisionFromReview(r)} style={{ background: "#f59e0b", color: "#fff", border: "none", borderRadius: 7, padding: "8px 0", fontSize: 12, fontWeight: 800, cursor: "pointer" }}>Make Revision</button>
+                            <button onClick={() => openReviewLink(r)} style={{ background: theme.segment, color: theme.text, border: `1px solid ${theme.border}`, borderRadius: 7, padding: "8px 0", fontSize: 12, fontWeight: 800, cursor: "pointer" }}>Open Review</button>
+                          </div>
+                        )}
                       </div>
                     ))}
                   </div>
@@ -1801,6 +1845,12 @@ Return ONLY valid JSON: {"${type}": "the new variant here"}`;
                           <div style={{ fontSize: 11, color: theme.faint }}>{r.review?.submittedAt ? new Date(r.review.submittedAt).toLocaleString() : "Awaiting response"}</div>
                           <button onClick={() => navigator.clipboard.writeText(r.url).catch(() => {})} style={{ background: "transparent", border: "none", color: "#f59e0b", fontSize: 12, fontWeight: 700, cursor: "pointer", padding: 0 }}>Copy link</button>
                         </div>
+                        {r.review && (
+                          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginTop: 9 }}>
+                            <button onClick={() => makeRevisionFromReview(r)} style={{ background: "#f59e0b", color: "#fff", border: "none", borderRadius: 7, padding: "8px 0", fontSize: 12, fontWeight: 800, cursor: "pointer" }}>Make Revision</button>
+                            <button onClick={() => openReviewLink(r)} style={{ background: theme.segment, color: theme.text, border: `1px solid ${theme.border}`, borderRadius: 7, padding: "8px 0", fontSize: 12, fontWeight: 800, cursor: "pointer" }}>Open Review</button>
+                          </div>
+                        )}
                       </div>
                     ))}
                   </div>
